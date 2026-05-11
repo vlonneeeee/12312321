@@ -9,6 +9,9 @@ import type { SlashCommand } from "@core/handler/command";
 import { errorEmbed, infoEmbed, successEmbed } from "@shared/embeds/factory";
 import { formatDuration, progressBar, truncate } from "@shared/utils/format";
 import { UserFacingError } from "@core/errors/errors";
+import { child } from "@core/logger/logger";
+
+const log = child("music.commands");
 
 function memberVoice(interaction: ChatInputCommandInteraction): {
   member: GuildMember;
@@ -27,6 +30,12 @@ async function safeReply(
   try {
     await fn();
   } catch (err) {
+    if (!(err instanceof UserFacingError)) {
+      log.error(
+        { err: err instanceof Error ? { message: err.message, stack: err.stack } : err, cmd: interaction.commandName },
+        "music command failed",
+      );
+    }
     const message = err instanceof UserFacingError ? err.message : "Something went wrong.";
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ embeds: [errorEmbed("Music", message)] });

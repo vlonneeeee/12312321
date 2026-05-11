@@ -56,7 +56,20 @@ export function getLavalink(client: Client): LavalinkManager {
   );
 
   client.on("raw", (d) => manager?.sendRawData(d));
-  client.once("ready", () => manager?.init({ id: client.user!.id, username: client.user!.username }));
+
+  const initManager = () => {
+    if (!client.user) return;
+    manager
+      ?.init({ id: client.user.id, username: client.user.username })
+      .then(() => log.info("lavalink manager initialised"))
+      .catch((err) => log.error({ err: err instanceof Error ? err.message : err }, "lavalink init failed"));
+  };
+
+  if (client.isReady() && client.user) {
+    initManager();
+  } else {
+    client.once("ready", initManager);
+  }
 
   return manager;
 }

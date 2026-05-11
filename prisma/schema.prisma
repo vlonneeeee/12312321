@@ -1,0 +1,953 @@
+// =============================================================================
+//  Discord Bot — Prisma schema
+//  PostgreSQL. Covers: global profiles, guild config, economy, clans, moderation,
+//  voice XP, tickets, rooms, roles, events, polls, news, housing, casino logs.
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------- GLOBAL / METAVERSE --------------------
+
+model User {
+  id              String   @id // Discord user id (snowflake)
+  username        String
+  globalName      String?
+  avatarHash      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSeenAt      DateTime @default(now())
+
+  // global economy / reputation
+  globalBalance   BigInt   @default(0)
+  globalBank      BigInt   @default(0)
+  reputation      Int      @default(0)
+  prestige        Int      @default(0)
+  xp              BigInt   @default(0)
+  level           Int      @default(0)
+
+  // moderation history
+  globalRiskScore Int      @default(0)
+  isBlacklisted   Boolean  @default(false)
+  blacklistReason String?
+
+  // relations
+  members        GuildMember[]
+  profile        Profile?
+  inventory      InventoryItem[]
+  cosmetics      OwnedCosmetic[]
+  ownedClans     Clan[]            @relation("ClanOwner")
+  clanMember     ClanMember?
+  tickets        Ticket[]          @relation("TicketAuthor")
+  ticketsClaimed Ticket[]          @relation("TicketClaimer")
+  warnings       ModerationCase[]  @relation("ModSubject")
+  modActions     ModerationCase[]  @relation("ModActor")
+  rooms          PrivateRoom[]
+  housings       Housing[]
+  pollVotes      PollVote[]
+  electionsVoted ElectionVote[]
+  newsSubs       NewsSubscription[]
+  voiceSessions  VoiceSession[]
+  messages       MessageMetric[]
+  transactions   Transaction[]
+  businesses     Business[]
+  investments    Investment[]
+  jailRecords    JailRecord[]
+  battlePass     BattlePassProgress[]
+  notifications  Notification[]
+
+  @@index([level])
+  @@index([globalBalance])
+  @@index([reputation])
+}
+
+model Profile {
+  userId        String  @id
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bannerUrl     String?
+  frameId       String?
+  themeId       String?
+  bio           String? @db.VarChar(500)
+  pronouns      String?
+  birthday      DateTime?
+  cardLayout    String  @default("default")
+  showcaseBadge String?
+  privacy       String  @default("public") // public | friends | private
+  updatedAt     DateTime @updatedAt
+}
+
+model Cosmetic {
+  id          String @id @default(cuid())
+  kind        String // banner | frame | badge | theme | card
+  name        String
+  description String?
+  rarity      String @default("common") // common | rare | epic | legendary | mythic
+  imageUrl    String?
+  priceCoins  BigInt @default(0)
+  priceGems   Int    @default(0)
+  available   Boolean @default(true)
+  seasonId    String?
+  createdAt   DateTime @default(now())
+
+  owners      OwnedCosmetic[]
+
+  @@index([kind, rarity])
+}
+
+model OwnedCosmetic {
+  id         String   @id @default(cuid())
+  userId     String
+  cosmeticId String
+  equipped   Boolean  @default(false)
+  acquiredAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cosmetic Cosmetic @relation(fields: [cosmeticId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cosmeticId])
+  @@index([userId])
+}
+
+// -------------------- GUILD CONFIG --------------------
+
+model Guild {
+  id             String   @id // snowflake
+  name           String
+  ownerId        String
+  iconHash       String?
+  joinedAt       DateTime @default(now())
+  premiumTier    Int      @default(0)
+  language       String   @default("ru")
+  timezone       String   @default("UTC")
+
+  // toggles per module
+  musicEnabled        Boolean @default(true)
+  moderationEnabled   Boolean @default(true)
+  economyEnabled      Boolean @default(true)
+  ticketsEnabled      Boolean @default(true)
+  roomsEnabled        Boolean @default(true)
+  verificationEnabled Boolean @default(false)
+  newsEnabled         Boolean @default(true)
+  clansEnabled        Boolean @default(true)
+  votingEnabled       Boolean @default(true)
+  voiceXpEnabled      Boolean @default(true)
+  analyticsEnabled    Boolean @default(true)
+
+  // common config
+  staffRoleIds   String[] @default([])
+  djRoleIds      String[] @default([])
+  muteRoleId     String?
+  logChannelId   String?
+  modLogChannelId String?
+  joinLogChannelId String?
+  msgLogChannelId String?
+  ticketCategoryId String?
+  roomHubChannelId String?
+  welcomeChannelId String?
+  welcomeMessage  String?  @db.Text
+  goodbyeChannelId String?
+  goodbyeMessage  String?  @db.Text
+  autoRoleIds    String[] @default([])
+  prefix         String   @default("!")
+
+  members       GuildMember[]
+  channels      GuildChannel[]
+  tickets       Ticket[]
+  ticketPanels  TicketPanel[]
+  modCases      ModerationCase[]
+  reactionRoles ReactionRole[]
+  levelRewards  LevelReward[]
+  rooms         PrivateRoom[]
+  roomConfigs   RoomConfig[]
+  polls         Poll[]
+  elections     Election[]
+  events        GuildEvent[]
+  newsFeeds     NewsFeed[]
+  scheduled     ScheduledMessage[]
+  filters       ContentFilter[]
+  antiNuke      AntiNukeConfig?
+  antiSpam      AntiSpamConfig?
+  antiRaid      AntiRaidConfig?
+  verification  VerificationConfig?
+  musicQueue    MusicQueue?
+  musicHistory  MusicHistoryItem[]
+  housings      Housing[]
+  clans         Clan[]
+  businesses    Business[]
+  jailRecords   JailRecord[]
+
+  @@index([ownerId])
+}
+
+model GuildMember {
+  id              String   @id @default(cuid())
+  userId          String
+  guildId         String
+  nickname        String?
+  joinedAt        DateTime @default(now())
+  leftAt          DateTime?
+
+  // per-guild XP + economy (separate from global)
+  xp              BigInt   @default(0)
+  level           Int      @default(0)
+  messages        Int      @default(0)
+  voiceMinutes    Int      @default(0)
+  coins           BigInt   @default(0)
+  bank            BigInt   @default(0)
+  lastDaily       DateTime?
+  lastWeekly      DateTime?
+  lastWork        DateTime?
+  lastCrime       DateTime?
+  lastVote        DateTime?
+
+  // mod state
+  warnCount       Int      @default(0)
+  muteUntil       DateTime?
+  jailUntil       DateTime?
+  isVerified      Boolean  @default(false)
+  riskScore       Int      @default(0)
+
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild          Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, guildId])
+  @@index([guildId, level])
+  @@index([guildId, coins])
+}
+
+model GuildChannel {
+  id             String @id // channel snowflake
+  guildId        String
+  name           String
+  type           Int
+  parentId       String?
+  isLogged       Boolean @default(false)
+  isMusicChannel Boolean @default(false)
+  isXpDisabled   Boolean @default(false)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+}
+
+// -------------------- ECONOMY / TRANSACTIONS --------------------
+
+enum TransactionType {
+  DAILY
+  WEEKLY
+  WORK
+  CRIME
+  ROB
+  GAMBLE_WIN
+  GAMBLE_LOSS
+  TRANSFER_IN
+  TRANSFER_OUT
+  DEPOSIT
+  WITHDRAW
+  SHOP_BUY
+  SHOP_SELL
+  TAX
+  INTEREST
+  CLAN_DEPOSIT
+  CLAN_WITHDRAW
+  HOUSING_INCOME
+  BUSINESS_INCOME
+  INVESTMENT
+  ADMIN
+  SYSTEM
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  userId    String
+  guildId   String?
+  type      TransactionType
+  amount    BigInt
+  balance   BigInt
+  reason    String?
+  meta      Json?
+  createdAt DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([guildId, createdAt])
+  @@index([type])
+}
+
+model ShopItem {
+  id          String  @id @default(cuid())
+  guildId     String? // null = global
+  name        String
+  description String?
+  price       BigInt
+  stock       Int     @default(-1)
+  roleId      String?
+  imageUrl    String?
+  category    String  @default("general")
+  enabled     Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  inventories InventoryItem[]
+
+  @@index([guildId])
+}
+
+model InventoryItem {
+  id        String  @id @default(cuid())
+  userId    String
+  shopItemId String
+  quantity  Int     @default(1)
+  meta      Json?
+  acquiredAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shopItem ShopItem @relation(fields: [shopItemId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Business {
+  id            String  @id @default(cuid())
+  guildId       String?
+  ownerId       String
+  name          String
+  type          String
+  level         Int     @default(1)
+  income        BigInt  @default(0)
+  lastCollect   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  owner User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  guild Guild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
+}
+
+model Investment {
+  id           String   @id @default(cuid())
+  userId       String
+  asset        String
+  amount       BigInt
+  buyPrice     Float
+  currentPrice Float
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// -------------------- CLANS --------------------
+
+model Clan {
+  id          String  @id @default(cuid())
+  guildId     String? // can be cross-guild for global clans
+  ownerId     String
+  name        String  @unique
+  tag         String  @unique
+  description String? @db.Text
+  iconUrl     String?
+  bannerUrl   String?
+  level       Int     @default(1)
+  xp          BigInt  @default(0)
+  treasury    BigInt  @default(0)
+  maxMembers  Int     @default(20)
+  isPrivate   Boolean @default(false)
+  createdAt   DateTime @default(now())
+
+  owner       User    @relation("ClanOwner", fields: [ownerId], references: [id])
+  guild       Guild?  @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  members     ClanMember[]
+  upgrades    ClanUpgrade[]
+  wars1       ClanWar[] @relation("WarAttacker")
+  wars2       ClanWar[] @relation("WarDefender")
+  alliances1  ClanAlliance[] @relation("AllianceA")
+  alliances2  ClanAlliance[] @relation("AllianceB")
+
+  @@index([level])
+  @@index([xp])
+}
+
+model ClanMember {
+  id        String @id @default(cuid())
+  userId    String @unique
+  clanId    String
+  rank      String @default("member") // owner | officer | veteran | member | recruit
+  joinedAt  DateTime @default(now())
+  contrib   BigInt @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clan Clan @relation(fields: [clanId], references: [id], onDelete: Cascade)
+
+  @@index([clanId])
+}
+
+model ClanUpgrade {
+  id     String @id @default(cuid())
+  clanId String
+  key    String
+  level  Int @default(1)
+
+  clan Clan @relation(fields: [clanId], references: [id], onDelete: Cascade)
+
+  @@unique([clanId, key])
+}
+
+model ClanWar {
+  id          String   @id @default(cuid())
+  attackerId  String
+  defenderId  String
+  status      String   @default("pending") // pending | active | finished | cancelled
+  scoreA      Int      @default(0)
+  scoreB      Int      @default(0)
+  startedAt   DateTime?
+  endsAt      DateTime?
+  winnerId    String?
+  createdAt   DateTime @default(now())
+
+  attacker Clan @relation("WarAttacker", fields: [attackerId], references: [id])
+  defender Clan @relation("WarDefender", fields: [defenderId], references: [id])
+
+  @@index([status])
+}
+
+model ClanAlliance {
+  id        String @id @default(cuid())
+  clanAId   String
+  clanBId   String
+  createdAt DateTime @default(now())
+
+  clanA Clan @relation("AllianceA", fields: [clanAId], references: [id])
+  clanB Clan @relation("AllianceB", fields: [clanBId], references: [id])
+
+  @@unique([clanAId, clanBId])
+}
+
+// -------------------- MODERATION --------------------
+
+enum ModerationAction {
+  WARN
+  MUTE
+  TIMEOUT
+  KICK
+  SOFTBAN
+  BAN
+  UNBAN
+  UNMUTE
+  PURGE
+  ROLE_ADD
+  ROLE_REMOVE
+  JAIL
+  UNJAIL
+  NOTE
+  SHADOW_MUTE
+}
+
+model ModerationCase {
+  id          String           @id @default(cuid())
+  guildId     String
+  subjectId   String
+  actorId     String?
+  action      ModerationAction
+  reason      String?          @db.Text
+  durationSec Int?
+  evidenceUrl String?
+  appealable  Boolean          @default(true)
+  appealedAt  DateTime?
+  appealState String?          // pending | accepted | rejected
+  expiresAt   DateTime?
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+
+  guild   Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  subject User  @relation("ModSubject", fields: [subjectId], references: [id])
+  actor   User? @relation("ModActor",   fields: [actorId],   references: [id])
+
+  @@index([guildId, subjectId])
+  @@index([guildId, action])
+  @@index([guildId, createdAt])
+}
+
+model AntiSpamConfig {
+  guildId       String  @id
+  enabled       Boolean @default(true)
+  maxMessages   Int     @default(7)
+  perSeconds    Int     @default(5)
+  punishment    String  @default("mute") // warn | mute | kick | ban
+  punishSeconds Int     @default(600)
+  ignoreRoles   String[] @default([])
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model AntiRaidConfig {
+  guildId        String  @id
+  enabled        Boolean @default(true)
+  joinThreshold  Int     @default(8) // joins per window
+  joinWindowSec  Int     @default(10)
+  action         String  @default("lockdown") // lockdown | kick_new | ban_new | verify_only
+  minAccountAge  Int     @default(7) // days
+  notifyChannelId String?
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model AntiNukeConfig {
+  guildId           String  @id
+  enabled           Boolean @default(true)
+  whitelistedRoles  String[] @default([])
+  whitelistedUsers  String[] @default([])
+  banLimit          Int     @default(3)
+  kickLimit         Int     @default(5)
+  channelDelLimit   Int     @default(3)
+  roleDelLimit      Int     @default(3)
+  webhookSpamLimit  Int     @default(3)
+  windowSeconds     Int     @default(60)
+  punishment        String  @default("ban") // strip | ban
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model ContentFilter {
+  id        String @id @default(cuid())
+  guildId   String
+  type      String // link | invite | word | regex | mediaext | mention
+  pattern   String
+  action    String @default("delete") // delete | warn | mute | ban
+  enabled   Boolean @default(true)
+  createdAt DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, type])
+}
+
+model VerificationConfig {
+  guildId            String  @id
+  enabled            Boolean @default(false)
+  mode               String  @default("button") // button | captcha | mixed
+  verifyRoleId       String?
+  verifyChannelId    String?
+  minAccountAgeDays  Int     @default(7)
+  blockVpn           Boolean @default(true)
+  riskThreshold      Int     @default(70)
+  message            String? @db.Text
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model JailRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  guildId   String
+  reason    String?
+  startedAt DateTime @default(now())
+  endsAt    DateTime
+  releasedAt DateTime?
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, endsAt])
+}
+
+// -------------------- TICKETS --------------------
+
+model TicketPanel {
+  id          String @id @default(cuid())
+  guildId     String
+  channelId   String
+  messageId   String?
+  title       String
+  description String? @db.Text
+  categories  Json    // [{ key, label, emoji?, categoryId, supportRoleIds, claimRequired }]
+  buttonStyle String  @default("primary")
+  enabled     Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+}
+
+model Ticket {
+  id          String   @id @default(cuid())
+  guildId     String
+  authorId    String
+  channelId   String   @unique
+  category    String
+  subject     String?
+  status      String   @default("open") // open | claimed | closed
+  claimerId   String?
+  claimedAt   DateTime?
+  closedAt    DateTime?
+  closedBy    String?
+  transcriptUrl String?
+  createdAt   DateTime @default(now())
+
+  guild   Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  author  User  @relation("TicketAuthor",  fields: [authorId],  references: [id])
+  claimer User? @relation("TicketClaimer", fields: [claimerId], references: [id])
+
+  @@index([guildId, status])
+}
+
+// -------------------- ROLES --------------------
+
+model ReactionRole {
+  id        String  @id @default(cuid())
+  guildId   String
+  channelId String
+  messageId String
+  emoji     String
+  roleId    String
+  mode      String  @default("toggle") // toggle | add | remove | unique
+  createdAt DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, emoji])
+  @@index([guildId])
+}
+
+model LevelReward {
+  id      String @id @default(cuid())
+  guildId String
+  level   Int
+  roleId  String
+  stack   Boolean @default(true)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, level])
+}
+
+model TemporaryRole {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  roleId    String
+  expiresAt DateTime
+  reason    String?
+
+  @@index([expiresAt])
+  @@unique([guildId, userId, roleId])
+}
+
+// -------------------- ROOMS (temporary voice/text) --------------------
+
+model RoomConfig {
+  id              String  @id @default(cuid())
+  guildId         String  @unique
+  hubChannelId    String
+  parentCategoryId String?
+  defaultName     String  @default("{username}'s room")
+  defaultLimit    Int     @default(0)
+  emptyDeleteSec  Int     @default(60)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model PrivateRoom {
+  id            String   @id @default(cuid())
+  guildId       String
+  ownerId       String
+  voiceChannelId String  @unique
+  textChannelId  String?
+  name          String
+  userLimit     Int      @default(0)
+  isLocked      Boolean  @default(false)
+  isHidden      Boolean  @default(false)
+  trustedUsers  String[] @default([])
+  blockedUsers  String[] @default([])
+  createdAt     DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  owner User  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+}
+
+// -------------------- VOICE / METRICS --------------------
+
+model VoiceSession {
+  id         String   @id @default(cuid())
+  guildId    String
+  userId     String
+  channelId  String
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+  durationSec Int     @default(0)
+  afkSeconds Int      @default(0)
+  mutedSec   Int      @default(0)
+  deafSec    Int      @default(0)
+  xpAwarded  Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, userId])
+}
+
+model MessageMetric {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  channelId String
+  date      DateTime @db.Date
+  count     Int      @default(1)
+  chars     Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId, channelId, date])
+  @@index([guildId, date])
+}
+
+// -------------------- MUSIC --------------------
+
+model MusicQueue {
+  guildId        String  @id
+  textChannelId  String?
+  voiceChannelId String?
+  djOnly         Boolean @default(false)
+  loopMode       String  @default("none") // none | track | queue
+  volume         Int     @default(80)
+  filters        Json?
+  is24x7         Boolean @default(false)
+  updatedAt      DateTime @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model MusicHistoryItem {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  title     String
+  uri       String
+  source    String
+  duration  Int
+  playedAt  DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, playedAt])
+}
+
+model Playlist {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  isPublic  Boolean  @default(false)
+  tracks    Json     // [{ title, uri, duration, source }]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+// -------------------- EVENTS / WARS / SEASONS --------------------
+
+model GuildEvent {
+  id          String   @id @default(cuid())
+  guildId     String
+  title       String
+  type        String   // boss | pvp | seasonal | custom
+  startsAt    DateTime
+  endsAt      DateTime
+  config      Json?
+  rewardJson  Json?
+  status      String   @default("scheduled") // scheduled | active | finished | cancelled
+  createdAt   DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, status])
+}
+
+model Season {
+  id        String   @id @default(cuid())
+  name      String
+  startsAt  DateTime
+  endsAt    DateTime
+  rewards   Json?
+  status    String   @default("upcoming")
+
+  battlePassProgress BattlePassProgress[]
+}
+
+model BattlePassProgress {
+  id        String @id @default(cuid())
+  userId    String
+  seasonId  String
+  xp        Int    @default(0)
+  tier      Int    @default(0)
+  isPremium Boolean @default(false)
+  claimed   Int[] @default([])
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, seasonId])
+}
+
+// -------------------- POLLS / ELECTIONS --------------------
+
+model Poll {
+  id        String   @id @default(cuid())
+  guildId   String
+  channelId String
+  messageId String?
+  authorId  String
+  question  String
+  options   Json     // [{ key, label, emoji? }]
+  multiple  Boolean  @default(false)
+  endsAt    DateTime?
+  closed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  guild Guild      @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@index([guildId])
+}
+
+model PollVote {
+  id     String @id @default(cuid())
+  pollId String
+  userId String
+  option String
+  createdAt DateTime @default(now())
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId, option])
+}
+
+model Election {
+  id        String   @id @default(cuid())
+  guildId   String
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  status    String   @default("scheduled")
+  candidates Json    // [{ userId, name }]
+  createdAt DateTime @default(now())
+
+  guild Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  votes ElectionVote[]
+}
+
+model ElectionVote {
+  id         String @id @default(cuid())
+  electionId String
+  userId     String
+  candidate  String
+
+  election Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([electionId, userId])
+}
+
+// -------------------- NEWS --------------------
+
+model NewsFeed {
+  id        String  @id @default(cuid())
+  guildId   String
+  url       String
+  channelId String
+  filter    String?
+  enabled   Boolean @default(true)
+  lastFetchedAt DateTime?
+  createdAt DateTime @default(now())
+
+  guild         Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  subscriptions NewsSubscription[]
+
+  @@index([guildId])
+}
+
+model NewsSubscription {
+  id      String @id @default(cuid())
+  userId  String
+  feedId  String
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feed NewsFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, feedId])
+}
+
+model ScheduledMessage {
+  id        String   @id @default(cuid())
+  guildId   String
+  channelId String
+  content   String   @db.Text
+  embedJson Json?
+  cron      String?
+  runAt     DateTime?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+// -------------------- HOUSING --------------------
+
+model Housing {
+  id         String   @id @default(cuid())
+  guildId    String
+  ownerId    String
+  name       String   @default("Home")
+  level      Int      @default(1)
+  income     BigInt   @default(0)
+  lastCollect DateTime @default(now())
+  rooms      Int      @default(1)
+  decoration Json?
+  createdAt  DateTime @default(now())
+
+  owner User  @relation(fields: [ownerId], references: [id])
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+// -------------------- NOTIFICATIONS --------------------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?  @db.Text
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+// -------------------- SESSIONS / API --------------------
+
+model WebSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  ip        String?
+  userAgent String?  @db.Text
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}

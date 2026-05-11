@@ -1,0 +1,37 @@
+{
+  "name": "discord-bot-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Production-ready multi-purpose Discord bot (music, moderation, economy, clans, tickets, rooms, analytics, web panel).",
+  "packageManager": "pnpm@9.15.1",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "bot:dev": "pnpm --filter @bot/core dev",
+    "bot:build": "pnpm --filter @bot/core build",
+    "bot:start": "pnpm --filter @bot/core start",
+    "web:dev": "pnpm --filter @bot/web dev",
+    "web:build": "pnpm --filter @bot/web build",
+    "prisma:generate": "pnpm --filter @bot/core prisma:generate",
+    "prisma:migrate": "pnpm --filter @bot/core prisma:migrate",
+    "prisma:deploy": "pnpm --filter @bot/core prisma:deploy",
+    "prisma:studio": "pnpm --filter @bot/core prisma:studio",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@prisma/client": "5.22.0",
+    "prettier": "^3.3.3",
+    "prisma": "5.22.0",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

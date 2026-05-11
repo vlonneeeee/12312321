@@ -1,0 +1,34 @@
+node_modules/
+dist/
+build/
+.next/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# prisma
+prisma/migrations/dev*
+
+# generated transcripts / temp files
+transcripts/
+tmp/
+
+# update.ps1 bookkeeping
+.last-update-sha

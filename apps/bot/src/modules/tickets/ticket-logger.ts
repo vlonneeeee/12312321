@@ -42,6 +42,7 @@ interface OpenedPayload {
   channelId: string;
   category: string;
   subject?: string | null;
+  modalAnswers?: Record<string, string>;
 }
 
 export async function postTicketOpened(
@@ -83,6 +84,25 @@ export async function postTicketOpened(
         },
       )
       .setTimestamp(new Date());
+
+    // If the open flow used a modal, append a compressed Q&A summary so staff
+    // see the form answers in the admin log without leaving the channel.
+    if (
+      payload.modalAnswers &&
+      Object.keys(payload.modalAnswers).length > 0
+    ) {
+      const lines: string[] = [];
+      for (const [fieldId, answer] of Object.entries(payload.modalAnswers)) {
+        const oneLine = answer.replace(/\s+/g, " ").slice(0, 200);
+        lines.push(`**${fieldId}**: ${oneLine}`);
+      }
+      const joined = lines.join("\n");
+      embed.addFields({
+        name: await t(gid, "tickets.log.field_modal_answers"),
+        value: joined.length > 1020 ? joined.slice(0, 1020) + "…" : joined,
+        inline: false,
+      });
+    }
     await channel.send({ embeds: [embed] }).catch((err) => {
       log.warn(
         { err: err instanceof Error ? err.message : err },
@@ -109,6 +129,8 @@ interface ClosedPayload {
   openedAt: Date;
   closedAt: Date;
   transcriptHtml: string;
+  /** Signed relative transcript URL (`/transcripts/<id>.html?sig=...`) or null. */
+  transcriptUrl?: string | null;
   messageCount: number;
   attachmentUrls: string[];
 }
@@ -190,6 +212,14 @@ export async function postTicketClosed(
       });
     }
 
+    if (payload.transcriptUrl) {
+      fields.push({
+        name: await t(gid, "tickets.log.field_transcript"),
+        value: `\`${payload.transcriptUrl}\``,
+        inline: false,
+      });
+    }
+
     const embed = new EmbedBuilder()
       .setColor(Colors.danger)
       .setTitle(await t(gid, "tickets.log.closed_title"))
@@ -240,6 +270,76 @@ function humanizeDuration(ms: number): string {
   if (minutes) parts.push(`${minutes}m`);
   if (!days && !hours) parts.push(`${seconds}s`);
   return parts.join(" ") || "0s";
+}
+
+/**
+ * Post a follow-up embed to the admin log channel when an author submits a
+ * 1-5 rating on a closed ticket. Best-effort; failures are swallowed because
+ * a missing rating log must never disturb actual ticket flow.
+ */
+export async function postTicketRated(
+  guild: Guild,
+  payload: {
+    ticketId: string;
+    authorId: string;
+    rating: number;
+    claimerId?: string | null;
+    comment?: string | null;
+  },
+): Promise<void> {
+  try {
+    const channel = await resolveLogChannel(guild);
+    if (!channel) return;
+    const gid = guild.id;
+    const fields = [
+      {
+        name: await t(gid, "tickets.log.field_user"),
+        value: `<@${payload.authorId}>`,
+        inline: true,
+      },
+      {
+        name: await t(gid, "tickets.log.field_rating"),
+        value: `${"⭐".repeat(payload.rating)} (${payload.rating}/5)`,
+        inline: true,
+      },
+      {
+        name: await t(gid, "tickets.log.field_ticket_id"),
+        value: `\`${payload.ticketId}\``,
+        inline: false,
+      },
+    ];
+    if (payload.claimerId) {
+      fields.splice(1, 0, {
+        name: await t(gid, "tickets.log.field_claimed_by"),
+        value: `<@${payload.claimerId}>`,
+        inline: true,
+      });
+    }
+    if (payload.comment) {
+      const trimmed = payload.comment.slice(0, 1020);
+      fields.push({
+        name: await t(gid, "tickets.log.field_rating_comment"),
+        value: trimmed,
+        inline: false,
+      });
+    }
+    const embed = new EmbedBuilder()
+      .setColor(Colors.primary)
+      .setTitle(await t(gid, "tickets.log.rated_title"))
+      .addFields(fields)
+      .setTimestamp(new Date());
+    await channel.send({ embeds: [embed] }).catch((err) =>
+      log.warn(
+        { err: err instanceof Error ? err.message : err },
+        "failed to post rating log",
+      ),
+    );
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : err },
+      "postTicketRated failed",
+    );
+  }
 }
 
 /**

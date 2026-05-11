@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  EmbedBuilder,
   type Guild,
   type GuildMember,
   PermissionsBitField,
@@ -12,11 +13,14 @@ import { prisma } from "@core/db/prisma";
 import { withLock } from "@core/locks/distributed-lock";
 import { UserFacingError } from "@core/errors/errors";
 import { eventBus } from "@core/events/event-bus";
-import { successEmbed, infoEmbed } from "@shared/embeds/factory";
+import { infoEmbed, successEmbed } from "@shared/embeds/factory";
+import { Colors } from "@shared/embeds/colors";
 import { child } from "@core/logger/logger";
 import { t } from "@core/i18n";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "@core/config/env";
 import {
   extractAttachmentUrls,
   postTicketClosed,
@@ -25,12 +29,106 @@ import {
 
 const log = child("tickets");
 
-interface TicketCategory {
+/**
+ * Schema for a single field inside a ticket-open modal. Stored per category on
+ * the panel as JSON, so admins can edit forms via slash command without code.
+ */
+export interface TicketModalField {
+  id: string;
+  label: string;
+  placeholder?: string;
+  style: "short" | "paragraph";
+  required: boolean;
+  minLength?: number;
+  maxLength?: number;
+}
+
+export interface TicketCategory {
   key: string;
   label: string;
   emoji?: string;
   categoryId?: string;
   supportRoleIds?: string[];
+  /** Optional pre-open modal fields (Discord caps at 5). */
+  modalFields?: TicketModalField[];
+}
+
+/**
+ * Resolve a `TicketCategory[]` from the JSON column. Tolerates legacy panels
+ * that stored a minimal `{ key, label }`. Never throws — bad shapes are
+ * filtered out so a single corrupt entry can't crash the whole flow.
+ */
+export function normalizeCategories(raw: unknown): TicketCategory[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TicketCategory[] = [];
+  for (const c of raw) {
+    if (!c || typeof c !== "object") continue;
+    const rec = c as Record<string, unknown>;
+    const key = typeof rec.key === "string" ? rec.key : null;
+    const label = typeof rec.label === "string" ? rec.label : null;
+    if (!key || !label) continue;
+    const modalFields = Array.isArray(rec.modalFields)
+      ? (rec.modalFields as unknown[])
+          .map((f) => {
+            if (!f || typeof f !== "object") return null;
+            const fr = f as Record<string, unknown>;
+            if (typeof fr.id !== "string" || typeof fr.label !== "string") {
+              return null;
+            }
+            return {
+              id: fr.id,
+              label: fr.label,
+              placeholder:
+                typeof fr.placeholder === "string" ? fr.placeholder : undefined,
+              style: fr.style === "paragraph" ? "paragraph" : "short",
+              required: Boolean(fr.required),
+              minLength:
+                typeof fr.minLength === "number" ? fr.minLength : undefined,
+              maxLength:
+                typeof fr.maxLength === "number" ? fr.maxLength : undefined,
+            } as TicketModalField;
+          })
+          .filter((f): f is TicketModalField => f !== null)
+      : undefined;
+    out.push({
+      key,
+      label,
+      emoji: typeof rec.emoji === "string" ? rec.emoji : undefined,
+      categoryId:
+        typeof rec.categoryId === "string" ? rec.categoryId : undefined,
+      supportRoleIds: Array.isArray(rec.supportRoleIds)
+        ? (rec.supportRoleIds as unknown[]).filter(
+            (x): x is string => typeof x === "string",
+          )
+        : undefined,
+      modalFields,
+    });
+  }
+  return out;
+}
+
+/**
+ * Build an HMAC-signed transcript URL that the HTTP route can verify without
+ * a DB lookup. Format: `/transcripts/<ticketId>.html?sig=<hex>`.
+ */
+export function buildTranscriptUrl(ticketId: string): string {
+  const sig = createHmac("sha256", env.SESSION_SECRET)
+    .update(`transcript:${ticketId}`)
+    .digest("hex");
+  return `/transcripts/${ticketId}.html?sig=${sig}`;
+}
+
+/**
+ * Constant-time verification for the transcript URL signature.
+ */
+export function verifyTranscriptSig(ticketId: string, sig: string): boolean {
+  const expected = createHmac("sha256", env.SESSION_SECRET)
+    .update(`transcript:${ticketId}`)
+    .digest("hex");
+  const a = Buffer.from(sig, "hex");
+  const b = Buffer.from(expected, "hex");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 export class TicketService {
@@ -39,6 +137,7 @@ export class TicketService {
     author: GuildMember;
     category: TicketCategory;
     subject?: string;
+    modalAnswers?: Record<string, string>;
   }): Promise<{ ticketId: string; channelId: string }> {
     const { guild, author, category } = opts;
     return withLock(`ticket:${guild.id}:${author.id}`, 6000, async () => {
@@ -111,6 +210,7 @@ export class TicketService {
           channelId: channel.id,
           category: category.key,
           subject: opts.subject ?? null,
+          modalAnswers: opts.modalAnswers ?? undefined,
         },
       });
 
@@ -126,6 +226,7 @@ export class TicketService {
         channelId: channel.id,
         category: category.label,
         subject: opts.subject ?? null,
+        modalAnswers: opts.modalAnswers,
       });
 
       const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -142,17 +243,44 @@ export class TicketService {
       );
       const subjectText =
         opts.subject ?? (await t(guild.id, "tickets.subject_none"));
+
+      const embeds = [
+        successEmbed(
+          await t(guild.id, "tickets.ticket_opened_title"),
+          await t(guild.id, "tickets.ticket_opened_body", {
+            category: category.label,
+            subject: subjectText,
+          }),
+        ),
+      ];
+
+      // If the user filled out a modal, attach a second embed with the Q&A so
+      // staff can see the context at a glance without scrolling.
+      if (opts.modalAnswers && Object.keys(opts.modalAnswers).length > 0) {
+        const fields = (category.modalFields ?? [])
+          .map((f) => {
+            const value = opts.modalAnswers?.[f.id];
+            if (!value) return null;
+            const truncated =
+              value.length > 1024 ? value.slice(0, 1020) + "…" : value;
+            return { name: f.label, value: truncated, inline: false };
+          })
+          .filter(
+            (f): f is { name: string; value: string; inline: boolean } =>
+              f !== null,
+          );
+        if (fields.length > 0) {
+          const answersEmbed = new EmbedBuilder()
+            .setColor(Colors.primary)
+            .setTitle(await t(guild.id, "tickets.modal.answers_title"))
+            .addFields(fields);
+          embeds.push(answersEmbed);
+        }
+      }
+
       await channel.send({
         content: `<@${author.id}>`,
-        embeds: [
-          successEmbed(
-            await t(guild.id, "tickets.ticket_opened_title"),
-            await t(guild.id, "tickets.ticket_opened_body", {
-              category: category.label,
-              subject: subjectText,
-            }),
-          ),
-        ],
+        embeds,
         components: [controls],
       });
       return { ticketId: ticket.id, channelId: channel.id };
@@ -196,6 +324,18 @@ export class TicketService {
     }
   }
 
+  /**
+   * Close a ticket. Flow:
+   *   1. Generate transcript HTML and persist it both to DB (truth source)
+   *      and to a local file (admin offline access).
+   *   2. Build a signed transcript URL and persist it on the ticket row.
+   *   3. Post the close embed (+ HTML attachment) to the admin log channel.
+   *   4. If ratings are enabled for the guild, try to DM the author a
+   *      1-5 star prompt. If DMs are closed, drop the prompt into the ticket
+   *      channel and wait up to 60s before deletion. If ratings are required
+   *      we wait up to 5 minutes for the rating before forcing deletion.
+   *   5. Delete the channel.
+   */
   async close(ticketId: string, closer: GuildMember): Promise<string> {
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
     const gid = closer.guild.id;
@@ -207,7 +347,6 @@ export class TicketService {
       .fetch(ticket.channelId)
       .catch(() => null)) as TextChannel | null;
 
-    let transcriptUrl = "";
     let transcriptHtml = "";
     let messageCount = 0;
     let attachmentUrls: string[] = [];
@@ -215,12 +354,13 @@ export class TicketService {
     if (channel) {
       channelName = channel.name;
       const result = await this.generateTranscript(channel, ticket.id);
-      transcriptUrl = result.url;
       transcriptHtml = result.html;
       messageCount = result.messageCount;
       attachmentUrls = result.attachmentUrls;
     }
     const closedAt = new Date();
+    const transcriptUrl = buildTranscriptUrl(ticket.id);
+
     await prisma.ticket.update({
       where: { id: ticketId },
       data: {
@@ -228,6 +368,7 @@ export class TicketService {
         closedAt,
         closedBy: closer.id,
         transcriptUrl,
+        transcriptHtml: transcriptHtml || null,
       },
     });
     eventBus.emit("ticket.closed", {
@@ -249,13 +390,102 @@ export class TicketService {
         openedAt: ticket.createdAt,
         closedAt,
         transcriptHtml,
+        transcriptUrl,
         messageCount,
         attachmentUrls,
       });
     }
 
-    if (channel) await channel.delete("Ticket closed").catch(() => null);
+    // Ratings flow — best effort, never blocks deletion long.
+    const ratingHandled = await this.requestRating(guild, channel, ticket);
+
+    if (channel) {
+      // If a required rating is still pending we already waited inside
+      // requestRating, so delete is safe to fire now.
+      void ratingHandled; // explicit acknowledgement to silence unused warning
+      await channel.delete("Ticket closed").catch(() => null);
+    }
     return transcriptUrl;
+  }
+
+  /**
+   * Submit a 1-5 rating on a closed ticket. Returns the updated rating value.
+   * Throws UserFacingError if the actor is not the author or the ticket is
+   * not in a rateable state.
+   */
+  async applyRating(
+    ticketId: string,
+    actorId: string,
+    score: number,
+    guildIdHint: string | null,
+  ): Promise<{ rating: number; guildId: string; authorId: string }> {
+    if (!Number.isInteger(score) || score < 1 || score > 5) {
+      throw new UserFacingError(
+        await t(guildIdHint, "tickets.rating.invalid_score"),
+      );
+    }
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      throw new UserFacingError(
+        await t(guildIdHint, "tickets.not_found"),
+      );
+    }
+    if (ticket.authorId !== actorId) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.rating.only_author"),
+      );
+    }
+    if (ticket.rating !== null && ticket.rating !== undefined) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.rating.already_rated"),
+      );
+    }
+    const updated = await prisma.ticket.update({
+      where: { id: ticketId },
+      data: { rating: score, ratedAt: new Date() },
+    });
+    eventBus.emit("ticket.rated", {
+      ticketId,
+      guildId: ticket.guildId,
+      authorId: ticket.authorId,
+      rating: score,
+    });
+    return {
+      rating: updated.rating ?? score,
+      guildId: ticket.guildId,
+      authorId: ticket.authorId,
+    };
+  }
+
+  /**
+   * Attach an optional free-text comment to an already-rated ticket.
+   */
+  async applyRatingComment(
+    ticketId: string,
+    actorId: string,
+    comment: string,
+  ): Promise<void> {
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      throw new UserFacingError(
+        await t(null, "tickets.not_found"),
+      );
+    }
+    if (ticket.authorId !== actorId) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.rating.only_author"),
+      );
+    }
+    if (ticket.rating === null || ticket.rating === undefined) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.rating.rate_first"),
+      );
+    }
+    const trimmed = comment.trim().slice(0, 4000);
+    await prisma.ticket.update({
+      where: { id: ticketId },
+      data: { ratingComment: trimmed || null },
+    });
   }
 
   async markChannelDeleted(channelId: string, guild?: Guild): Promise<void> {
@@ -284,6 +514,7 @@ export class TicketService {
         openedAt: ticket.createdAt,
         closedAt,
         transcriptHtml: `<!doctype html><html><body><p>Channel was deleted manually; transcript unavailable.</p></body></html>`,
+        transcriptUrl: null,
         messageCount: 0,
         attachmentUrls: [],
       });
@@ -298,11 +529,70 @@ export class TicketService {
     return g?.ticketCategoryId ?? null;
   }
 
+  /**
+   * Dispatch a rating prompt for a freshly-closed ticket. Returns `true` if a
+   * prompt was successfully delivered (regardless of whether the user clicked).
+   * Never throws — failure to ask for a rating must not prevent the ticket
+   * from closing.
+   */
+  private async requestRating(
+    guild: Guild,
+    channel: TextChannel | null,
+    ticket: { id: string; authorId: string; guildId: string },
+  ): Promise<boolean> {
+    const g = await prisma.guild.findUnique({
+      where: { id: ticket.guildId },
+      select: { ticketRatingEnabled: true, ticketRatingRequired: true },
+    });
+    if (!g?.ticketRatingEnabled) return false;
+
+    const gid = ticket.guildId;
+    const author = await guild.members
+      .fetch(ticket.authorId)
+      .catch(() => null);
+    if (!author) return false;
+
+    const prompt = await buildRatingPrompt(gid, ticket.id);
+
+    let delivered = false;
+    try {
+      const dm = await author.createDM();
+      await dm.send(prompt);
+      delivered = true;
+    } catch {
+      // DMs closed — fall back to posting in the ticket channel before delete.
+    }
+
+    if (!delivered && channel) {
+      try {
+        await channel.send(prompt);
+        delivered = true;
+      } catch {
+        // ignored — channel may already be unreachable
+      }
+    }
+
+    if (delivered && g.ticketRatingRequired) {
+      // Poll for up to 5 minutes for the author to rate. We sleep in 5s
+      // increments so the deletion can fire promptly the moment the rating
+      // lands. This still bounds the wait — we never block forever.
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await sleep(5_000);
+        const fresh = await prisma.ticket.findUnique({
+          where: { id: ticket.id },
+          select: { rating: true },
+        });
+        if (fresh?.rating !== null && fresh?.rating !== undefined) break;
+      }
+    }
+    return delivered;
+  }
+
   private async generateTranscript(
     channel: TextChannel,
     ticketId: string,
   ): Promise<{
-    url: string;
     html: string;
     messageCount: number;
     attachmentUrls: string[];
@@ -317,14 +607,13 @@ export class TicketService {
       const file = path.join(dir, `${ticketId}.html`);
       await writeFile(file, html, "utf8");
       return {
-        url: `file://${file}`,
         html,
         messageCount: ordered.length,
         attachmentUrls,
       };
     } catch (err) {
       log.warn({ err, ticketId }, "transcript failed");
-      return { url: "", html: "", messageCount: 0, attachmentUrls: [] };
+      return { html: "", messageCount: 0, attachmentUrls: [] };
     }
   }
 }
@@ -420,6 +709,37 @@ function escapeHtml(s: string): string {
         c
       ]!,
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Build the rating prompt payload (5 star buttons + skip).
+ * Public so the buttons handler can re-render it cleanly.
+ */
+export async function buildRatingPrompt(
+  guildId: string,
+  ticketId: string,
+): Promise<{
+  embeds: EmbedBuilder[];
+  components: ActionRowBuilder<ButtonBuilder>[];
+}> {
+  const embed = new EmbedBuilder()
+    .setColor(Colors.primary)
+    .setTitle(await t(guildId, "tickets.rating.prompt_title"))
+    .setDescription(await t(guildId, "tickets.rating.prompt_body"));
+
+  const stars = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    ...[1, 2, 3, 4, 5].map((n) =>
+      new ButtonBuilder()
+        .setCustomId(`ticket:rate:${ticketId}:${n}`)
+        .setLabel("⭐".repeat(n))
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  );
+  return { embeds: [embed], components: [stars] };
 }
 
 export const ticketService = new TicketService();

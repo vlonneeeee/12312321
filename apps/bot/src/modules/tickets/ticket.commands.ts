@@ -10,6 +10,8 @@ import { prisma } from "@core/db/prisma";
 import { errorEmbed, infoEmbed, successEmbed } from "@shared/embeds/factory";
 import { UserFacingError } from "@core/errors/errors";
 import { t } from "@core/i18n";
+import { normalizeCategories } from "./ticket.service";
+import { presentOpenModal } from "./ticket-modal.modals";
 
 async function reply(
   interaction: import("discord.js").ChatInputCommandInteraction,
@@ -214,22 +216,21 @@ const ticketOpenSelect: SelectMenuHandler = {
   async execute(interaction) {
     if (!interaction.isStringSelectMenu()) return;
 
-    // Acknowledge with an ephemeral defer so the user sees "thinking" and the
-    // interaction stays valid through the (possibly slow) channel creation.
-    await interaction.deferReply({ ephemeral: true });
+    // Note: we do NOT deferReply here because some categories trigger a modal
+    // and Discord requires the modal to be sent on a fresh, undeferred
+    // interaction. We defer later via safeDeferAndReply() for the non-modal path.
 
     const key = interaction.values[0]!;
     const panel = await prisma.ticketPanel.findFirst({
       where: { messageId: interaction.message.id },
     });
 
-    // Always refresh the panel select after handling so the dropdown is not
-    // visually "stuck" on the previous choice on the user's client. Without
-    // this the same user picking the same category does not trigger a new
-    // interaction (the value did not change).
+    // Rebuild the panel select once we know whether it survived this round so
+    // the dropdown is not visually "stuck" on the previous choice. Repeating
+    // the same category otherwise wouldn't fire a new interaction.
     const rebuildPanel = async () => {
       if (!panel) return;
-      const cats = panel.categories as Array<{ key: string; label: string }>;
+      const cats = normalizeCategories(panel.categories);
       const fresh = new StringSelectMenuBuilder()
         .setCustomId("ticket:open")
         .setPlaceholder("Open a ticket…")
@@ -238,6 +239,7 @@ const ticketOpenSelect: SelectMenuHandler = {
             label: c.label,
             value: c.key,
             description: `Open ${c.label}`,
+            ...(c.emoji ? { emoji: c.emoji } : {}),
           })),
         );
       const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -247,6 +249,7 @@ const ticketOpenSelect: SelectMenuHandler = {
     };
 
     if (!panel) {
+      await safeDeferAndReply(interaction);
       await interaction.editReply({
         embeds: [
           errorEmbed(
@@ -257,9 +260,10 @@ const ticketOpenSelect: SelectMenuHandler = {
       });
       return;
     }
-    const cats = panel.categories as Array<{ key: string; label: string }>;
+    const cats = normalizeCategories(panel.categories);
     const cat = cats.find((c) => c.key === key);
     if (!cat) {
+      await safeDeferAndReply(interaction);
       await rebuildPanel();
       await interaction.editReply({
         embeds: [
@@ -271,6 +275,33 @@ const ticketOpenSelect: SelectMenuHandler = {
       });
       return;
     }
+
+    // If this category has a modal, surface it BEFORE deferring so Discord
+    // accepts the showModal call (it can't follow a deferReply). The modal
+    // submit handler is responsible for opening the channel after submission.
+    if (cat.modalFields && cat.modalFields.length > 0) {
+      try {
+        await presentOpenModal(interaction, panel.id, cat);
+        // Rebuild the select asynchronously so the dropdown un-sticks even if
+        // the user dismisses the modal.
+        void rebuildPanel();
+        return;
+      } catch (err) {
+        const fallback = await t(
+          interaction.guildId,
+          "common.something_went_wrong",
+        );
+        const msg = err instanceof UserFacingError ? err.message : fallback;
+        const title = await t(interaction.guildId, "tickets.title");
+        await interaction
+          .reply({ embeds: [errorEmbed(title, msg)], ephemeral: true })
+          .catch(() => null);
+        void rebuildPanel();
+        return;
+      }
+    }
+
+    await safeDeferAndReply(interaction);
     const { ticketService } = await import("./ticket.service");
     try {
       const r = await ticketService.openTicket({
@@ -299,6 +330,14 @@ const ticketOpenSelect: SelectMenuHandler = {
     }
   },
 };
+
+async function safeDeferAndReply(
+  interaction: import("discord.js").StringSelectMenuInteraction,
+) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
+  }
+}
 
 export const buttons: ButtonHandler[] = [ticketClose, ticketClaim];
 export const select: SelectMenuHandler = ticketOpenSelect;

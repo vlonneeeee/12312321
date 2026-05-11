@@ -10,6 +10,7 @@ import { defineEvent } from "@core/handler/event";
 import { prisma } from "@core/db/prisma";
 import { child } from "@core/logger/logger";
 import { infoEmbed } from "@shared/embeds/factory";
+import { normalizeCategories } from "./ticket.service";
 
 const log = child("tickets:panel-restore");
 
@@ -70,10 +71,7 @@ export const event = defineEvent({
         }
 
         // Missing — rebuild and re-send.
-        const cats = (panel.categories ?? []) as Array<{
-          key: string;
-          label: string;
-        }>;
+        const cats = normalizeCategories(panel.categories);
         if (!cats.length) {
           skipped++;
           continue;
@@ -86,6 +84,7 @@ export const event = defineEvent({
               label: c.label,
               value: c.key,
               description: `Open ${c.label}`,
+              ...(c.emoji ? { emoji: c.emoji } : {}),
             })),
           );
         const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(

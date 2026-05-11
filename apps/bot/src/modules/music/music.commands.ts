@@ -10,16 +10,19 @@ import { errorEmbed, infoEmbed, successEmbed } from "@shared/embeds/factory";
 import { formatDuration, progressBar, truncate } from "@shared/utils/format";
 import { UserFacingError } from "@core/errors/errors";
 import { child } from "@core/logger/logger";
+import { t } from "@core/i18n";
 
 const log = child("music.commands");
 
-function memberVoice(interaction: ChatInputCommandInteraction): {
+async function memberVoice(interaction: ChatInputCommandInteraction): Promise<{
   member: GuildMember;
   channel: VoiceBasedChannel;
-} {
+}> {
   const member = interaction.member as GuildMember;
   const channel = member.voice.channel;
-  if (!channel) throw new UserFacingError("Join a voice channel first.");
+  if (!channel) {
+    throw new UserFacingError(await t(interaction.guildId, "music.join_voice_first"));
+  }
   return { member, channel };
 }
 
@@ -36,7 +39,8 @@ async function safeReply(
         "music command failed",
       );
     }
-    const message = err instanceof UserFacingError ? err.message : "Something went wrong.";
+    const fallback = await t(interaction.guildId, "common.something_went_wrong");
+    const message = err instanceof UserFacingError ? err.message : fallback;
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ embeds: [errorEmbed("Music", message)] });
     } else {
@@ -68,7 +72,7 @@ const playCommand: SlashCommand = {
   async execute(interaction) {
     await safeReply(interaction, async () => {
       await interaction.deferReply();
-      const { member, channel } = memberVoice(interaction);
+      const { member, channel } = await memberVoice(interaction);
       const query = interaction.options.getString("query", true);
       const source = (interaction.options.getString("source") ?? "ytmsearch") as
         | "ytsearch"
@@ -82,16 +86,19 @@ const playCommand: SlashCommand = {
         await interaction.editReply({
           embeds: [
             successEmbed(
-              `Added playlist (${res.tracks.length} tracks)`,
+              await t(interaction.guildId, "music.playlist_added", { count: res.tracks.length }),
               truncate(res.playlistName ?? query, 200),
             ),
           ],
         });
       } else {
-        const t = res.tracks[0]!;
+        const track = res.tracks[0]!;
         await interaction.editReply({
           embeds: [
-            successEmbed("Added to queue", `**${truncate(t.info.title, 240)}**\n${t.info.author}`),
+            successEmbed(
+              await t(interaction.guildId, "music.added_to_queue"),
+              `**${truncate(track.info.title, 240)}**\n${track.info.author}`,
+            ),
           ],
         });
       }

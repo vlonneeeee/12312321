@@ -1,0 +1,70 @@
+{
+  "common": {
+    "something_went_wrong": "Что-то пошло не так.",
+    "dj_only": "Команда только для DJ.",
+    "guild_only": "Команда работает только на сервере.",
+    "no_permission": "Недостаточно прав.",
+    "cooldown": "Подождите {seconds}с перед следующим использованием.",
+    "yes": "да",
+    "no": "нет"
+  },
+  "language": {
+    "name": "Русский",
+    "changed": "Язык сервера установлен: **Русский**.",
+    "current": "Текущий язык: **{lang}**. Доступные: ru, en.",
+    "unsupported": "Язык не поддерживается. Доступные: ru, en."
+  },
+  "music": {
+    "join_voice_first": "Сначала зайди в голосовой канал.",
+    "nothing_found": "Ничего не найдено по запросу.",
+    "no_player": "Сейчас ничего не играет.",
+    "only_dj_skip": "Пропускать могут только DJ и тот кто заказал.",
+    "volume_range": "Громкость должна быть 0–200.",
+    "playlist_added": "Добавлен плейлист ({count} треков)",
+    "added_to_queue": "Добавлено в очередь",
+    "skipped": "Пропущено",
+    "track_skipped": "Трек пропущен.",
+    "paused": "Поставлено на паузу",
+    "resumed": "Возобновлено",
+    "stopped": "Остановлено"
+  },
+  "tickets": {
+    "title": "Тикеты",
+    "already_open": "У тебя уже открыт тикет: <#{channelId}>",
+    "channel_missing": "Канал тикета не найден.",
+    "already_closed": "Тикет уже закрыт.",
+    "not_found": "Тикет не найден.",
+    "already_claimed": "Тикет уже принят <@{claimerId}>.",
+    "use_in_text_channel": "Используй в текстовом канале.",
+    "provide_category": "Укажи минимум 1 категорию.",
+    "panel_deployed": "Панель размещена",
+    "ticket_opened_title": "Тикет открыт",
+    "ticket_opened_body": "Категория: **{category}**\nТема: {subject}\nПерсонал ответит в ближайшее время.",
+    "subject_none": "(без темы)",
+    "claimed_title": "Принят",
+    "claimed_body": "Принят <@{claimerId}>",
+    "close_failed": "Не удалось закрыть."
+  },
+  "economy": {
+    "insufficient_funds": "Недостаточно средств.",
+    "balance_self": "Твой баланс: **{amount}** {currency}",
+    "balance_other": "Баланс <@{userId}>: **{amount}** {currency}",
+    "daily_claimed": "Ежедневный бонус получен: **+{amount}**",
+    "daily_cooldown": "Следующий бонус через {time}.",
+    "transfer_done": "Переведено **{amount}** {currency} пользователю <@{toId}>.",
+    "transfer_self": "Нельзя переводить самому себе."
+  },
+  "moderation": {
+    "user_required": "Укажи пользователя.",
+    "reason_required": "Укажи причину.",
+    "cant_mod_self": "Нельзя применить к себе.",
+    "cant_mod_bot": "Нельзя применить к боту.",
+    "higher_role": "Цель имеет более высокую роль.",
+    "warned": "Выдано предупреждение <@{userId}>: {reason}",
+    "muted": "Заглушен <@{userId}> на {duration}: {reason}",
+    "unmuted": "Снят мут с <@{userId}>",
+    "kicked": "Кикнут <@{userId}>: {reason}",
+    "banned": "Забанен <@{userId}>: {reason}",
+    "unbanned": "Разбанен <@{userId}>"
+  }
+}

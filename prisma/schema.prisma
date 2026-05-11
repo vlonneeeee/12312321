@@ -164,6 +164,10 @@ model Guild {
   ticketAutoCloseHours Int  @default(48)   // 0 disables auto-close
   ticketInactivityWarnHours Int @default(0) // 0 disables warn-before-close
 
+  // tickets — 2.0
+  ticketRatingEnabled  Boolean @default(true)  // ask author for 1-5 rating before deleting channel
+  ticketRatingRequired Boolean @default(false) // if true, channel deletion is delayed up to 5 min waiting for a rating
+
   prefix         String   @default("!")
 
   members       GuildMember[]
@@ -606,12 +610,22 @@ model Ticket {
   lastActivityAt    DateTime  @default(now())
   inactivityWarnedAt DateTime?
 
+  // tickets 2.0
+  modalAnswers   Json?     // { fieldId: answer } captured from the opening modal
+  transcriptHtml String?   @db.Text // archived transcript HTML; superseded transcriptUrl filesystem links
+  rating         Int?      // 1..5
+  ratingComment  String?   @db.Text
+  ratedAt        DateTime?
+
   guild   Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
   author  User  @relation("TicketAuthor",  fields: [authorId],  references: [id])
   claimer User? @relation("TicketClaimer", fields: [claimerId], references: [id])
 
   @@index([guildId, status])
   @@index([status, lastActivityAt])
+  @@index([guildId, closedAt])
+  @@index([authorId, status])
+  @@index([guildId, category])
 }
 
 // -------------------- ROLES --------------------

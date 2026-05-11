@@ -18,6 +18,12 @@ export type DomainEventMap = {
   // tickets
   "ticket.created": { ticketId: string; guildId: string; authorId: string };
   "ticket.closed": { ticketId: string; guildId: string; closedBy: string };
+  "ticket.rated": {
+    ticketId: string;
+    guildId: string;
+    authorId: string;
+    rating: number;
+  };
   // rooms
   "room.created": { roomId: string; ownerId: string; guildId: string };
   "room.deleted": { roomId: string; guildId: string };

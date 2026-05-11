@@ -32,3 +32,4 @@ tmp/
 
 # update.ps1 bookkeeping
 .last-update-sha
+TICKETS_2.0_PLAN.md

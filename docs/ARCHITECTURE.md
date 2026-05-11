@@ -150,7 +150,7 @@ In single-shard dev mode we spawn one shard directly to keep stack traces clean.
 | `interest` | 1h | accrue bank interest at the configured APR. |
 | `voice-xp-flush` | 1m | flush per-user voice-time XP from Redis to DB. |
 
-The queue is `bot:jobs`. Single worker with concurrency 4; safe because each
+The queue is `bot-jobs`. Single worker with concurrency 4; safe because each
 job is idempotent (operates on `expiresAt < now()` etc.).
 
 ## Music

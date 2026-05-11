@@ -1,13 +1,18 @@
 import { Collection, REST, Routes } from "discord.js";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { env } from "@core/config/env";
 import { child } from "@core/logger/logger";
 import type { ButtonHandler, ModalHandler, SelectMenuHandler, SlashCommand } from "./command";
 import type { DiscordEvent } from "./event";
 
 const log = child("registry");
+
+// Use a CommonJS require bound to this file. Works identically in tsx dev and
+// compiled CJS prod, and avoids the file:// dynamic-import quirk that breaks
+// module loading on Windows when TS transpiles `import()` to `require()`.
+const moduleRequire = createRequire(__filename);
 
 export class CommandRegistry {
   readonly commands = new Collection<string, SlashCommand>();
@@ -18,7 +23,7 @@ export class CommandRegistry {
 
   async loadFromModulesDir(rootDir: string): Promise<void> {
     await this.walk(rootDir, async (file) => {
-      const mod = await import(pathToFileURL(file).href);
+      const mod = moduleRequire(file);
       if (mod?.command) this.registerCommand(mod.command);
       if (mod?.commands && Array.isArray(mod.commands)) {
         for (const c of mod.commands) this.registerCommand(c);

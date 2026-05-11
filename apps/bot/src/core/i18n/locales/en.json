@@ -37,6 +37,7 @@
       "misc": "Misc"
     },
     "cmd": {
+      "247": "Toggle 24/7 mode.",
       "config": "Toggle module features for this server.",
       "stats": "7-day activity for a user.",
       "blackjack": "Auto-played blackjack (simplified).",
@@ -80,7 +81,6 @@
       "purge": "Bulk delete messages.",
       "softban": "Softban a user (ban + unban to purge messages).",
       "warn": "Warn a user.",
-      "247": "Toggle 24/7 mode.",
       "filter": "Apply audio filter.",
       "loop": "Set loop mode.",
       "nowplaying": "Show currently playing track.",
@@ -178,7 +178,12 @@
       "field_claimed_by": "Claimed by",
       "field_duration": "Duration",
       "field_messages": "Messages",
-      "field_attachments": "Attachments ({count})"
+      "field_attachments": "Attachments ({count})",
+      "field_modal_answers": "Form answers",
+      "field_transcript": "Transcript",
+      "field_rating": "Rating",
+      "field_rating_comment": "Comment",
+      "rated_title": "⭐ Ticket rating received"
     },
     "config": {
       "log_channel_set": "Tickets log channel set: <#{channelId}>",
@@ -191,7 +196,54 @@
       "show_auto_close_off": "disabled",
       "auto_close_set": "Tickets will auto-close after **{hours}h** of inactivity. Warn **{warn}h** before.",
       "auto_close_off": "Auto-close disabled.",
-      "warn_too_late": "`warn-before` must be smaller than `hours`."
+      "warn_too_late": "`warn-before` must be smaller than `hours`.",
+      "rating_on": "Rating prompt **enabled**. Required response: {required}.",
+      "rating_off": "Rating prompt disabled.",
+      "panel_not_found": "Panel not found for this server.",
+      "modal_empty": "This category has no form questions yet.",
+      "modal_cleared": "Cleared all form questions for this category.",
+      "modal_field_added": "Field `{fieldId}` added.",
+      "modal_field_removed": "Field `{fieldId}` removed.",
+      "modal_field_not_found": "No field with that `field-id` exists.",
+      "modal_field_exists": "A field with that `field-id` already exists.",
+      "modal_field_limit": "Maximum 5 fields per category (Discord limit).",
+      "modal_field_id_invalid": "`field-id` must contain only Latin letters, digits, `_` and `-` (up to 32 chars).",
+      "modal_field_length_invalid": "`min-length` must be less than or equal to `max-length`."
+    },
+    "modal": {
+      "title": "Open ticket: {category}",
+      "no_fields": "This category has no form fields configured.",
+      "answers_title": "Author answers"
+    },
+    "rating": {
+      "prompt_title": "Please rate our support",
+      "prompt_body": "Tap the number of stars from 1 to 5.",
+      "thanks_title": "Thanks for the rating!",
+      "thanks_body": "You rated us {score}/5.",
+      "add_comment_button": "Add a comment",
+      "comment_title": "Rating comment",
+      "comment_label": "Tell us more (optional)",
+      "comment_saved": "Comment saved.",
+      "invalid_score": "Rating must be between 1 and 5.",
+      "only_author": "Only the ticket author can rate this ticket.",
+      "already_rated": "This ticket has already been rated.",
+      "rate_first": "Submit a rating first, then you can leave a comment."
+    },
+    "search": {
+      "title": "Ticket search",
+      "no_results": "No tickets matched the given filters.",
+      "header": "Found: **{total}** · page **{page}/{pages}**",
+      "row_author": "Author",
+      "row_category": "Category",
+      "row_subject": "Subject",
+      "row_status": "Status",
+      "row_claimer": "Claimed by",
+      "row_rating": "Rating",
+      "row_opened": "Opened",
+      "row_closed": "Closed",
+      "row_transcript": "Transcript",
+      "prev": "Previous",
+      "next": "Next"
     }
   },
   "welcome": {

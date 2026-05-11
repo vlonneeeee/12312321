@@ -7,6 +7,7 @@ import { redis } from "@core/cache/redis";
 import { registerStatsRoutes } from "./routes/stats";
 import { registerGuildRoutes } from "./routes/guilds";
 import { registerAuthRoutes } from "./routes/auth";
+import { registerTranscriptsRoutes } from "./routes/transcripts";
 
 const log = child("http");
 let server: FastifyInstance | undefined;
@@ -44,6 +45,7 @@ export async function startHttpServer(client: Client): Promise<FastifyInstance> 
   registerAuthRoutes(server);
   registerStatsRoutes(server);
   registerGuildRoutes(server);
+  registerTranscriptsRoutes(server);
 
   await server.listen({ port: env.BOT_HTTP_PORT, host: "0.0.0.0" });
   log.info({ port: env.BOT_HTTP_PORT }, "http server started");

@@ -46,6 +46,7 @@
       "misc": "Прочее"
     },
     "cmd": {
+      "247": "Включить/выключить режим 24/7.",
       "config": "Включение/выключение модулей сервера.",
       "stats": "Активность пользователя за 7 дней.",
       "blackjack": "Автоматический блэкджек (упрощённый).",
@@ -89,7 +90,6 @@
       "purge": "Удалить сообщения пачкой.",
       "softban": "Софт-бан (бан и разбан для чистки).",
       "warn": "Выдать предупреждение.",
-      "247": "Включить/выключить режим 24/7.",
       "filter": "Применить аудио-фильтр.",
       "loop": "Режим повтора.",
       "nowplaying": "Сейчас играет.",
@@ -178,7 +178,12 @@
       "field_claimed_by": "Принял",
       "field_duration": "Длительность",
       "field_messages": "Сообщений",
-      "field_attachments": "Вложения ({count})"
+      "field_attachments": "Вложения ({count})",
+      "field_modal_answers": "Ответы из формы",
+      "field_transcript": "Транскрипт",
+      "field_rating": "Оценка",
+      "field_rating_comment": "Комментарий",
+      "rated_title": "⭐ Получена оценка тикета"
     },
     "config": {
       "log_channel_set": "Лог-канал тикетов установлен: <#{channelId}>",
@@ -191,7 +196,54 @@
       "show_auto_close_off": "отключено",
       "auto_close_set": "Тикеты будут автозакрываться через **{hours}ч** бездействия. Предупреждение за **{warn}ч**.",
       "auto_close_off": "Автозакрытие отключено.",
-      "warn_too_late": "`warn-before` должно быть меньше `hours`."
+      "warn_too_late": "`warn-before` должно быть меньше `hours`.",
+      "rating_on": "Запрос оценки **включён**. Обязательный ответ: {required}.",
+      "rating_off": "Запрос оценки отключён.",
+      "panel_not_found": "Панель не найдена для этого сервера.",
+      "modal_empty": "У категории пока нет вопросов формы.",
+      "modal_cleared": "Все вопросы формы для категории удалены.",
+      "modal_field_added": "Поле `{fieldId}` добавлено.",
+      "modal_field_removed": "Поле `{fieldId}` удалено.",
+      "modal_field_not_found": "Поле с таким `field-id` не найдено.",
+      "modal_field_exists": "Поле с таким `field-id` уже существует.",
+      "modal_field_limit": "Максимум 5 полей на категорию (ограничение Discord).",
+      "modal_field_id_invalid": "`field-id` должен состоять только из латиницы, цифр, `_` и `-` (до 32 символов).",
+      "modal_field_length_invalid": "`min-length` должна быть не больше `max-length`."
+    },
+    "modal": {
+      "title": "Открыть тикет: {category}",
+      "no_fields": "У этой категории нет полей формы.",
+      "answers_title": "Ответы автора"
+    },
+    "rating": {
+      "prompt_title": "Оцените, пожалуйста, работу поддержки",
+      "prompt_body": "Нажмите на нужное число звёзд — от 1 до 5.",
+      "thanks_title": "Спасибо за оценку!",
+      "thanks_body": "Вы поставили {score}/5.",
+      "add_comment_button": "Оставить комментарий",
+      "comment_title": "Комментарий к оценке",
+      "comment_label": "Расскажите подробнее (необязательно)",
+      "comment_saved": "Комментарий сохранён.",
+      "invalid_score": "Оценка должна быть от 1 до 5.",
+      "only_author": "Оценить тикет может только его автор.",
+      "already_rated": "Тикет уже оценён.",
+      "rate_first": "Сначала поставьте оценку, потом можно оставить комментарий."
+    },
+    "search": {
+      "title": "Поиск по тикетам",
+      "no_results": "Ничего не найдено по заданным фильтрам.",
+      "header": "Найдено: **{total}** · стр. **{page}/{pages}**",
+      "row_author": "Автор",
+      "row_category": "Категория",
+      "row_subject": "Тема",
+      "row_status": "Статус",
+      "row_claimer": "Принял",
+      "row_rating": "Оценка",
+      "row_opened": "Открыт",
+      "row_closed": "Закрыт",
+      "row_transcript": "Транскрипт",
+      "prev": "Назад",
+      "next": "Далее"
     }
   },
   "welcome": {

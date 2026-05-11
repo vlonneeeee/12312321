@@ -60,13 +60,14 @@ export class CommandRegistry {
       return;
     }
     for (const entry of entries) {
-      if (entry.startsWith("_") || entry.startsWith(".")) continue;
+      if (entry.startsWith(".")) continue;
       const full = path.join(dir, entry);
       const s = await stat(full);
       if (s.isDirectory()) {
         await this.walk(full, onFile);
       } else if (
         s.isFile() &&
+        !entry.startsWith("_") &&
         (entry.endsWith(".commands.js") ||
           entry.endsWith(".commands.ts") ||
           entry.endsWith(".events.js") ||

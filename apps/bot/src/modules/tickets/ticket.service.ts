@@ -787,15 +787,33 @@ export class TicketService {
 
   /**
    * Throws UserFacingError if `member` may not run an admin/moderation
-   * action on `ticket`. Allowed: claimer, server staff, ManageGuild.
+   * action on `ticket`.
+   *
+   * Rules:
+   *   - The ticket author is NEVER allowed to moderate their own ticket,
+   *     even if they are the guild owner or have ManageGuild. Otherwise
+   *     anyone who opens a ticket would be able to add/remove arbitrary
+   *     members to it.
+   *   - The current claimer is always allowed.
+   *   - Server staff (isStaff: guild owner / ManageGuild perm /
+   *     Guild.staffRoleIds) are allowed.
    */
   async assertCanModerate(
-    ticket: { id: string; guildId: string; claimerId: string | null },
+    ticket: {
+      id: string;
+      guildId: string;
+      authorId: string;
+      claimerId: string | null;
+    },
     member: GuildMember,
   ): Promise<void> {
+    if (member.id === ticket.authorId) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.author_cannot_moderate"),
+      );
+    }
     if (ticket.claimerId && ticket.claimerId === member.id) return;
     if (await isStaff(member)) return;
-    if (member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return;
     throw new UserFacingError(
       await t(ticket.guildId, "tickets.admin.forbidden"),
     );

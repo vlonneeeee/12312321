@@ -12,8 +12,73 @@ import { UserFacingError } from "@core/errors/errors";
 import { errorEmbed, infoEmbed, successEmbed } from "@shared/embeds/factory";
 import { t } from "@core/i18n";
 import { child } from "@core/logger/logger";
+import { prisma } from "@core/db/prisma";
+import { isStaff } from "@shared/utils/perms";
 
 const log = child("tickets:admin-buttons");
+
+/**
+ * Pre-flight permission check for any admin-row button. Returns true when
+ * the interaction may proceed (modal/select can open). Otherwise replies
+ * with an ephemeral error and returns false so the caller stops.
+ *
+ * Author of the ticket is rejected outright \u2014 they should never be able
+ * to add/remove/transfer/freeze/priority/transcript their own ticket,
+ * even if they happen to have ManageGuild.
+ */
+export async function ensureAdminButton(
+  interaction: import("discord.js").ButtonInteraction,
+  ticketId: string,
+): Promise<boolean> {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    select: { id: true, authorId: true, claimerId: true, status: true, guildId: true },
+  });
+  if (!ticket || ticket.status === "closed") {
+    await interaction
+      .reply({
+        embeds: [
+          errorEmbed(
+            await t(interaction.guildId, "tickets.title"),
+            await t(interaction.guildId, "tickets.not_found"),
+          ),
+        ],
+        ephemeral: true,
+      })
+      .catch(() => null);
+    return false;
+  }
+  const member = interaction.member as GuildMember | null;
+  if (!member) return false;
+  if (member.id === ticket.authorId) {
+    await interaction
+      .reply({
+        embeds: [
+          errorEmbed(
+            await t(interaction.guildId, "tickets.title"),
+            await t(interaction.guildId, "tickets.admin.button_not_for_author"),
+          ),
+        ],
+        ephemeral: true,
+      })
+      .catch(() => null);
+    return false;
+  }
+  if (ticket.claimerId === member.id) return true;
+  if (await isStaff(member)) return true;
+  await interaction
+    .reply({
+      embeds: [
+        errorEmbed(
+          await t(interaction.guildId, "tickets.title"),
+          await t(interaction.guildId, "tickets.admin.button_not_for_user"),
+        ),
+      ],
+      ephemeral: true,
+    })
+    .catch(() => null);
+  return false;
+}
 
 async function replyError(
   interaction: import("discord.js").ButtonInteraction,
@@ -68,6 +133,7 @@ const ticketAddUserBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     try {
       await interaction.showModal(
         buildSimpleModal({
@@ -94,6 +160,7 @@ const ticketRemoveUserBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     try {
       await interaction.showModal(
         buildSimpleModal({
@@ -123,6 +190,7 @@ const ticketTransferBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     try {
       await interaction.showModal(
         buildSimpleModal({
@@ -149,6 +217,7 @@ const ticketCloseReasonBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     try {
       await interaction.showModal(
         buildSimpleModal({
@@ -179,6 +248,7 @@ const ticketTranscriptNowBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
     try {
       const { ticketService } = await import("./ticket.service");
@@ -211,6 +281,7 @@ const ticketFreezeBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
     try {
       const { prisma } = await import("@core/db/prisma");
@@ -255,6 +326,7 @@ const ticketPriorityBtn: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    if (!(await ensureAdminButton(interaction, ticketId))) return;
     const select = new StringSelectMenuBuilder()
       .setCustomId(`ticket:prioritypick:${ticketId}`)
       .setPlaceholder(

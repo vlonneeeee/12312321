@@ -129,10 +129,17 @@ const openCmd: SlashCommand = {
   category: "tickets",
   guildOnly: true,
   data: new SlashCommandBuilder()
-    .setName("ticket")
+    .setName("ticket-open")
     .setDescription("Open a ticket without using the panel.")
+    .setDescriptionLocalizations({
+      ru: "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0442\u0438\u043a\u0435\u0442 \u0431\u0435\u0437 \u043f\u0430\u043d\u0435\u043b\u0438 \u0432\u044b\u0431\u043e\u0440\u0430 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.",
+    })
     .addStringOption((o) =>
-      o.setName("subject").setDescription("Subject").setRequired(true),
+      o
+        .setName("subject")
+        .setDescription("Subject")
+        .setDescriptionLocalizations({ ru: "\u0422\u0435\u043c\u0430 \u0442\u0438\u043a\u0435\u0442\u0430" })
+        .setRequired(true),
     ),
   async execute(interaction) {
     await reply(interaction, async () => {

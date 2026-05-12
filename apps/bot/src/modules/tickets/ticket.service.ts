@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
@@ -21,10 +22,12 @@ import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "@core/config/env";
+import { isStaff } from "@shared/utils/perms";
 import {
   extractAttachmentUrls,
   postTicketClosed,
   postTicketOpened,
+  resolveAdminLogChannel,
 } from "./ticket-logger";
 
 const log = child("tickets");
@@ -43,6 +46,14 @@ export interface TicketModalField {
   maxLength?: number;
 }
 
+/**
+ * Policy for who can claim a ticket created from this category.
+ *   "staff"  — default. Anyone with isStaff() (ManageGuild or staffRoleIds).
+ *   "anyone" — any guild member, like Ticket Tool's open-claim mode.
+ *   string[] — list of role IDs allowed to claim.
+ */
+export type ClaimableBy = "staff" | "anyone" | string[];
+
 export interface TicketCategory {
   key: string;
   label: string;
@@ -51,6 +62,102 @@ export interface TicketCategory {
   supportRoleIds?: string[];
   /** Optional pre-open modal fields (Discord caps at 5). */
   modalFields?: TicketModalField[];
+  /** Tickets 2.1: who is allowed to claim tickets from this category. */
+  claimableBy?: ClaimableBy;
+  /** Tickets 2.1: roles pinged in a side message when a ticket opens. */
+  pingRoleIds?: string[];
+}
+
+/**
+ * Priority levels for a ticket. Stored as a signed int so we can index it.
+ *   -1 low / 0 normal / 1 high / 2 urgent
+ */
+export const PRIORITY = {
+  LOW: -1,
+  NORMAL: 0,
+  HIGH: 1,
+  URGENT: 2,
+} as const;
+
+export function priorityFromString(s: string): number | null {
+  switch (s.toLowerCase()) {
+    case "low":
+      return PRIORITY.LOW;
+    case "normal":
+      return PRIORITY.NORMAL;
+    case "high":
+      return PRIORITY.HIGH;
+    case "urgent":
+      return PRIORITY.URGENT;
+    default:
+      return null;
+  }
+}
+
+export function priorityEmoji(p: number): string {
+  switch (p) {
+    case PRIORITY.LOW:
+      return "\uD83D\uDFE2"; // green circle
+    case PRIORITY.HIGH:
+      return "\uD83D\uDFE0"; // orange circle
+    case PRIORITY.URGENT:
+      return "\uD83D\uDD34"; // red circle
+    case PRIORITY.NORMAL:
+    default:
+      return "\uD83D\uDFE1"; // yellow circle
+  }
+}
+
+export function priorityKey(p: number): string {
+  switch (p) {
+    case PRIORITY.LOW:
+      return "low";
+    case PRIORITY.HIGH:
+      return "high";
+    case PRIORITY.URGENT:
+      return "urgent";
+    case PRIORITY.NORMAL:
+    default:
+      return "normal";
+  }
+}
+
+export function priorityColor(p: number): number {
+  switch (p) {
+    case PRIORITY.LOW:
+      return 0x57f287; // green
+    case PRIORITY.HIGH:
+      return 0xfaa61a; // orange
+    case PRIORITY.URGENT:
+      return 0xed4245; // red
+    case PRIORITY.NORMAL:
+    default:
+      return Colors.primary;
+  }
+}
+
+function sanitizeChannelName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9\-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 90);
+}
+
+/**
+ * Build the channel name for a ticket. Encodes the priority as an emoji
+ * prefix so staff can sort/glance at a glance.
+ */
+function buildChannelName(
+  username: string,
+  priority: number,
+  suffix: string,
+): string {
+  const userSlug = sanitizeChannelName(username.slice(0, 20)) || "user";
+  const prefix =
+    priority === PRIORITY.NORMAL ? "" : `${priorityEmoji(priority)}-`;
+  return `${prefix}ticket-${userSlug}-${suffix}`.slice(0, 95);
 }
 
 /**
@@ -90,6 +197,25 @@ export function normalizeCategories(raw: unknown): TicketCategory[] {
           })
           .filter((f): f is TicketModalField => f !== null)
       : undefined;
+
+    // tickets 2.1 — claimableBy supports legacy missing field ("staff") and
+    // string list (role IDs). Reject any shape we don't recognize.
+    let claimableBy: ClaimableBy | undefined;
+    if (rec.claimableBy === "anyone" || rec.claimableBy === "staff") {
+      claimableBy = rec.claimableBy;
+    } else if (Array.isArray(rec.claimableBy)) {
+      const ids = (rec.claimableBy as unknown[]).filter(
+        (x): x is string => typeof x === "string",
+      );
+      if (ids.length > 0) claimableBy = ids;
+    }
+
+    const pingRoleIds = Array.isArray(rec.pingRoleIds)
+      ? (rec.pingRoleIds as unknown[]).filter(
+          (x): x is string => typeof x === "string",
+        )
+      : undefined;
+
     out.push({
       key,
       label,
@@ -102,9 +228,54 @@ export function normalizeCategories(raw: unknown): TicketCategory[] {
           )
         : undefined,
       modalFields,
+      claimableBy,
+      pingRoleIds: pingRoleIds && pingRoleIds.length > 0 ? pingRoleIds : undefined,
     });
   }
   return out;
+}
+
+/**
+ * Resolve the category currently associated with a ticket row by walking the
+ * panels of the same guild. Used by claim/admin actions that only have the
+ * ticket row and need to apply per-category policy.
+ */
+async function findCategoryForTicket(
+  guildId: string,
+  categoryKey: string,
+): Promise<TicketCategory | null> {
+  const panels = await prisma.ticketPanel.findMany({ where: { guildId } });
+  for (const p of panels) {
+    const cats = normalizeCategories(p.categories);
+    const found = cats.find((c) => c.key === categoryKey);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function memberHasAnyRole(
+  member: GuildMember,
+  roleIds: string[],
+): Promise<boolean> {
+  return member.roles.cache.some((r) => roleIds.includes(r.id));
+}
+
+/**
+ * Returns true if `member` is allowed to claim a ticket from the given
+ * category. Defaults to staff-only when `claimableBy` is missing or
+ * malformed (legacy panels).
+ */
+async function canClaim(
+  category: TicketCategory | null,
+  member: GuildMember,
+): Promise<boolean> {
+  const policy = category?.claimableBy ?? "staff";
+  if (policy === "anyone") return true;
+  if (Array.isArray(policy)) {
+    if (await isStaff(member)) return true;
+    return memberHasAnyRole(member, policy);
+  }
+  return isStaff(member);
 }
 
 /**
@@ -129,6 +300,68 @@ export function verifyTranscriptSig(ticketId: string, sig: string): boolean {
   const b = Buffer.from(expected, "hex");
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+/**
+ * Build the two action rows attached to the in-channel ticket welcome
+ * message: the first row carries the original Claim / Close pair, the
+ * second row is the staff admin toolkit added in 2.1. Both share the
+ * `ticket:<action>:<ticketId>` customId convention so handlers can
+ * extract the ticketId without lookups.
+ */
+export function buildTicketControlRows(
+  ticketId: string,
+): ActionRowBuilder<ButtonBuilder>[] {
+  const primary = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket:claim:${ticketId}`)
+      .setLabel("Claim")
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji("\u270B"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:close:${ticketId}`)
+      .setLabel("Close")
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji("\uD83D\uDD12"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:closereason:${ticketId}`)
+      .setLabel("Close with reason")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\uD83D\uDDD2\uFE0F"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:transcriptnow:${ticketId}`)
+      .setLabel("Transcript")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\uD83D\uDCC4"),
+  );
+  const admin = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket:adduser:${ticketId}`)
+      .setLabel("Add user")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\u2795"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:remuser:${ticketId}`)
+      .setLabel("Remove user")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\u2796"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:transfer:${ticketId}`)
+      .setLabel("Transfer")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\uD83D\uDD01"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:freeze:${ticketId}`)
+      .setLabel("Freeze")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\u2744\uFE0F"),
+    new ButtonBuilder()
+      .setCustomId(`ticket:priority:${ticketId}`)
+      .setLabel("Priority")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("\uD83D\uDEA9"),
+  );
+  return [primary, admin];
 }
 
 export class TicketService {
@@ -175,8 +408,14 @@ export class TicketService {
       }
       const parentId =
         category.categoryId ?? (await this.defaultCategory(guild.id));
+      const initialPriority = PRIORITY.NORMAL;
+      const channelName = buildChannelName(
+        author.user.username,
+        initialPriority,
+        Date.now().toString(36).slice(-4),
+      );
       const channel = await guild.channels.create({
-        name: `ticket-${author.user.username.slice(0, 20)}-${Date.now().toString(36).slice(-4)}`,
+        name: channelName,
         type: ChannelType.GuildText,
         parent: parentId ?? undefined,
         topic: `Ticket | ${author.id} | ${category.key}`,
@@ -211,6 +450,7 @@ export class TicketService {
           category: category.key,
           subject: opts.subject ?? null,
           modalAnswers: opts.modalAnswers ?? undefined,
+          priority: initialPriority,
         },
       });
 
@@ -229,18 +469,7 @@ export class TicketService {
         modalAnswers: opts.modalAnswers,
       });
 
-      const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ticket:claim:${ticket.id}`)
-          .setLabel("Claim")
-          .setStyle(ButtonStyle.Primary)
-          .setEmoji("✋"),
-        new ButtonBuilder()
-          .setCustomId(`ticket:close:${ticket.id}`)
-          .setLabel("Close")
-          .setStyle(ButtonStyle.Danger)
-          .setEmoji("🔒"),
-      );
+      const controls = buildTicketControlRows(ticket.id);
       const subjectText =
         opts.subject ?? (await t(guild.id, "tickets.subject_none"));
 
@@ -278,11 +507,29 @@ export class TicketService {
         }
       }
 
-      await channel.send({
+      const welcome = await channel.send({
         content: `<@${author.id}>`,
         embeds,
-        components: [controls],
+        components: controls,
       });
+      // Pin the welcome message so it's anchored at the top of the channel
+      // regardless of scroll position. Best effort — ManageMessages may be
+      // absent on the bot in some servers.
+      void welcome.pin().catch(() => null);
+
+      // Side-channel ping for the support roles configured on this category.
+      // Sent as a separate plain message because pings inside an embed don't
+      // actually trigger notifications.
+      if (category.pingRoleIds && category.pingRoleIds.length > 0) {
+        const mentions = category.pingRoleIds.map((id) => `<@&${id}>`).join(" ");
+        await channel
+          .send({
+            content: mentions,
+            allowedMentions: { roles: category.pingRoleIds },
+          })
+          .catch(() => null);
+      }
+
       return { ticketId: ticket.id, channelId: channel.id };
     });
   }
@@ -299,6 +546,12 @@ export class TicketService {
           claimerId: ticket.claimerId,
         }),
       );
+    }
+    // tickets 2.1: enforce the per-category claim policy. Default "staff"
+    // keeps the previous behaviour intact for legacy panels.
+    const category = await findCategoryForTicket(ticket.guildId, ticket.category);
+    if (!(await canClaim(category, claimer))) {
+      throw new UserFacingError(await t(gid, "tickets.claim_forbidden"));
     }
     await prisma.ticket.update({
       where: { id: ticketId },
@@ -336,7 +589,11 @@ export class TicketService {
    *      we wait up to 5 minutes for the rating before forcing deletion.
    *   5. Delete the channel.
    */
-  async close(ticketId: string, closer: GuildMember): Promise<string> {
+  async close(
+    ticketId: string,
+    closer: GuildMember,
+    opts: { reason?: string } = {},
+  ): Promise<string> {
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
     const gid = closer.guild.id;
     if (!ticket || ticket.status === "closed") {
@@ -360,6 +617,7 @@ export class TicketService {
     }
     const closedAt = new Date();
     const transcriptUrl = buildTranscriptUrl(ticket.id);
+    const reason = opts.reason?.trim().slice(0, 2000) || null;
 
     await prisma.ticket.update({
       where: { id: ticketId },
@@ -369,6 +627,7 @@ export class TicketService {
         closedBy: closer.id,
         transcriptUrl,
         transcriptHtml: transcriptHtml || null,
+        closeReason: reason,
       },
     });
     eventBus.emit("ticket.closed", {
@@ -393,6 +652,7 @@ export class TicketService {
         transcriptUrl,
         messageCount,
         attachmentUrls,
+        reason,
       });
     }
 
@@ -519,6 +779,399 @@ export class TicketService {
         attachmentUrls: [],
       });
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Tickets 2.1 admin actions
+  // ------------------------------------------------------------------
+
+  /**
+   * Throws UserFacingError if `member` may not run an admin/moderation
+   * action on `ticket`. Allowed: claimer, server staff, ManageGuild.
+   */
+  async assertCanModerate(
+    ticket: { id: string; guildId: string; claimerId: string | null },
+    member: GuildMember,
+  ): Promise<void> {
+    if (ticket.claimerId && ticket.claimerId === member.id) return;
+    if (await isStaff(member)) return;
+    if (member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return;
+    throw new UserFacingError(
+      await t(ticket.guildId, "tickets.admin.forbidden"),
+    );
+  }
+
+  private async loadActiveTicket(ticketId: string) {
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket || ticket.status === "closed") {
+      throw new UserFacingError(await t(ticket?.guildId ?? null, "tickets.not_found"));
+    }
+    return ticket;
+  }
+
+  /** Add another guild member into the ticket channel's allow-list. */
+  async addUser(
+    ticketId: string,
+    actor: GuildMember,
+    targetId: string,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (!channel) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.channel_missing"),
+      );
+    }
+    const targetMember = await actor.guild.members
+      .fetch(targetId)
+      .catch(() => null);
+    if (!targetMember) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.member_not_found"),
+      );
+    }
+    await channel.permissionOverwrites.edit(targetId, {
+      ViewChannel: true,
+      SendMessages: true,
+      AttachFiles: true,
+      ReadMessageHistory: true,
+    });
+    await channel.send({
+      embeds: [
+        infoEmbed(
+          await t(ticket.guildId, "tickets.admin.user_added_title"),
+          await t(ticket.guildId, "tickets.admin.user_added_body", {
+            userId: targetId,
+            actorId: actor.id,
+          }),
+        ),
+      ],
+    });
+  }
+
+  /** Remove a user from the ticket channel's allow-list. */
+  async removeUser(
+    ticketId: string,
+    actor: GuildMember,
+    targetId: string,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    if (targetId === ticket.authorId) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.cannot_remove_author"),
+      );
+    }
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (!channel) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.channel_missing"),
+      );
+    }
+    await channel.permissionOverwrites.delete(targetId).catch(() => null);
+    await channel.send({
+      embeds: [
+        infoEmbed(
+          await t(ticket.guildId, "tickets.admin.user_removed_title"),
+          await t(ticket.guildId, "tickets.admin.user_removed_body", {
+            userId: targetId,
+            actorId: actor.id,
+          }),
+        ),
+      ],
+    });
+  }
+
+  /**
+   * Transfer the claim to another staff member. Resets claimedAt and
+   * refreshes the channel topic so the new owner is obvious.
+   */
+  async transferClaim(
+    ticketId: string,
+    actor: GuildMember,
+    newClaimer: GuildMember,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    const category = await findCategoryForTicket(ticket.guildId, ticket.category);
+    if (!(await canClaim(category, newClaimer))) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.transfer_forbidden"),
+      );
+    }
+    await prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        claimerId: newClaimer.id,
+        claimedAt: new Date(),
+        status: "claimed",
+      },
+    });
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (channel) {
+      const topic = `Ticket | ${ticket.authorId} | ${ticket.category} | claimed by ${newClaimer.user.username}`;
+      channel.setTopic(topic).catch(() => null);
+      await channel.send({
+        embeds: [
+          infoEmbed(
+            await t(ticket.guildId, "tickets.admin.transferred_title"),
+            await t(ticket.guildId, "tickets.admin.transferred_body", {
+              fromId: actor.id,
+              toId: newClaimer.id,
+            }),
+          ),
+        ],
+      });
+    }
+  }
+
+  /** Set the priority (-1..2) on a ticket and rename the channel to match. */
+  async setPriority(
+    ticketId: string,
+    actor: GuildMember,
+    level: number,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    if (![PRIORITY.LOW, PRIORITY.NORMAL, PRIORITY.HIGH, PRIORITY.URGENT].includes(level as -1 | 0 | 1 | 2)) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.bad_priority"),
+      );
+    }
+    if (ticket.priority === level) return; // no-op
+    await prisma.ticket.update({
+      where: { id: ticketId },
+      data: { priority: level },
+    });
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (channel) {
+      // Strip any existing priority emoji prefix and reapply the new one.
+      const rawName = channel.name.replace(/^.{1,3}-/, "");
+      const author = await actor.guild.members
+        .fetch(ticket.authorId)
+        .catch(() => null);
+      const usernamePart = author?.user.username ?? rawName;
+      // Channel rename is rate-limited (twice per 10 min); ignore failure.
+      const newName = buildChannelName(
+        usernamePart,
+        level,
+        ticket.id.slice(-4),
+      );
+      channel.setName(newName).catch(() => null);
+      await channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(priorityColor(level))
+            .setTitle(
+              await t(ticket.guildId, "tickets.admin.priority_title", {
+                emoji: priorityEmoji(level),
+              }),
+            )
+            .setDescription(
+              await t(ticket.guildId, "tickets.admin.priority_body", {
+                level: await t(
+                  ticket.guildId,
+                  `tickets.priority.${priorityKey(level)}`,
+                ),
+                actorId: actor.id,
+              }),
+            ),
+        ],
+      });
+    }
+  }
+
+  /**
+   * Freeze (or unfreeze) the ticket. While frozen the author cannot send
+   * messages \u2014 only staff and the claimer can. Useful when the staff need
+   * the requester to wait for a decision without spamming.
+   */
+  async setFreeze(
+    ticketId: string,
+    actor: GuildMember,
+    frozen: boolean,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    if (ticket.frozen === frozen) return;
+    await prisma.ticket.update({
+      where: { id: ticketId },
+      data: { frozen },
+    });
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (channel) {
+      await channel.permissionOverwrites
+        .edit(ticket.authorId, {
+          SendMessages: frozen ? false : true,
+        })
+        .catch(() => null);
+      await channel.send({
+        embeds: [
+          infoEmbed(
+            await t(
+              ticket.guildId,
+              frozen
+                ? "tickets.admin.frozen_title"
+                : "tickets.admin.unfrozen_title",
+            ),
+            await t(
+              ticket.guildId,
+              frozen
+                ? "tickets.admin.frozen_body"
+                : "tickets.admin.unfrozen_body",
+              { actorId: actor.id },
+            ),
+          ),
+        ],
+      });
+    }
+  }
+
+  /** Rename the underlying Discord channel for the ticket. */
+  async renameChannel(
+    ticketId: string,
+    actor: GuildMember,
+    name: string,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    const slug = sanitizeChannelName(name);
+    if (!slug) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.bad_name"),
+      );
+    }
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (!channel) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.channel_missing"),
+      );
+    }
+    const prefix =
+      ticket.priority === PRIORITY.NORMAL
+        ? ""
+        : `${priorityEmoji(ticket.priority)}-`;
+    const finalName = `${prefix}${slug}`.slice(0, 95);
+    try {
+      await channel.setName(finalName);
+    } catch {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.rename_rate_limited"),
+      );
+    }
+    await channel.send({
+      embeds: [
+        infoEmbed(
+          await t(ticket.guildId, "tickets.admin.renamed_title"),
+          await t(ticket.guildId, "tickets.admin.renamed_body", {
+            name: finalName,
+            actorId: actor.id,
+          }),
+        ),
+      ],
+    });
+  }
+
+  /**
+   * Snapshot the current transcript without closing the ticket. The HTML
+   * is regenerated, persisted, and pushed to the admin log channel as a
+   * file attachment. Useful for long-running tickets that staff want to
+   * archive periodically.
+   */
+  async requestTranscriptNow(
+    ticketId: string,
+    actor: GuildMember,
+  ): Promise<void> {
+    const ticket = await this.loadActiveTicket(ticketId);
+    await this.assertCanModerate(ticket, actor);
+    const channel = (await actor.guild.channels
+      .fetch(ticket.channelId)
+      .catch(() => null)) as TextChannel | null;
+    if (!channel) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.channel_missing"),
+      );
+    }
+    const result = await this.generateTranscript(channel, ticket.id);
+    if (!result.html) {
+      throw new UserFacingError(
+        await t(ticket.guildId, "tickets.admin.transcript_failed"),
+      );
+    }
+    const transcriptUrl = buildTranscriptUrl(ticket.id);
+    await prisma.ticket.update({
+      where: { id: ticketId },
+      data: { transcriptHtml: result.html, transcriptUrl },
+    });
+
+    // Side-channel snapshot to the admin log: a slim embed + the HTML file.
+    const logChannel = await resolveAdminLogChannel(actor.guild);
+    if (logChannel) {
+      const attachment = new AttachmentBuilder(
+        Buffer.from(result.html, "utf8"),
+        {
+          name: `transcript-${ticket.id}-snapshot.html`,
+          description: `Snapshot transcript for ${ticket.id}`,
+        },
+      );
+      const embed = new EmbedBuilder()
+        .setColor(Colors.primary)
+        .setTitle(await t(ticket.guildId, "tickets.admin.snapshot_title"))
+        .addFields(
+          {
+            name: await t(ticket.guildId, "tickets.log.field_ticket_id"),
+            value: `\`${ticket.id}\``,
+            inline: false,
+          },
+          {
+            name: await t(ticket.guildId, "tickets.log.field_channel"),
+            value: `<#${ticket.channelId}>`,
+            inline: true,
+          },
+          {
+            name: await t(ticket.guildId, "tickets.admin.snapshot_by"),
+            value: `<@${actor.id}>`,
+            inline: true,
+          },
+          {
+            name: await t(ticket.guildId, "tickets.log.field_messages"),
+            value: String(result.messageCount),
+            inline: true,
+          },
+          {
+            name: await t(ticket.guildId, "tickets.log.field_transcript"),
+            value: `\`${transcriptUrl}\``,
+            inline: false,
+          },
+        )
+        .setTimestamp(new Date());
+      await logChannel
+        .send({ embeds: [embed], files: [attachment] })
+        .catch(() => null);
+    }
+    await channel.send({
+      embeds: [
+        infoEmbed(
+          await t(ticket.guildId, "tickets.admin.snapshot_ok_title"),
+          await t(ticket.guildId, "tickets.admin.snapshot_ok_body", {
+            actorId: actor.id,
+          }),
+        ),
+      ],
+    });
   }
 
   private async defaultCategory(guildId: string): Promise<string | null> {

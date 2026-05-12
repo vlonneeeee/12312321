@@ -16,7 +16,16 @@ const log = child("tickets:logger");
 /**
  * Resolve the admin channel where ticket activity should be posted.
  * Priority: Guild.ticketsLogChannelId -> Guild.modLogChannelId -> Guild.logChannelId.
+ *
+ * Exported as `resolveAdminLogChannel` for sibling modules (ticket service
+ * uses it for ad-hoc transcript snapshots).
  */
+export async function resolveAdminLogChannel(
+  guild: Guild,
+): Promise<TextChannel | null> {
+  return resolveLogChannel(guild);
+}
+
 async function resolveLogChannel(guild: Guild): Promise<TextChannel | null> {
   const g = await prisma.guild.findUnique({
     where: { id: guild.id },
@@ -133,6 +142,8 @@ interface ClosedPayload {
   transcriptUrl?: string | null;
   messageCount: number;
   attachmentUrls: string[];
+  /** Staff-provided reason at close time. Tickets 2.1 only. */
+  reason?: string | null;
 }
 
 export async function postTicketClosed(
@@ -195,6 +206,18 @@ export async function postTicketClosed(
         name: await t(gid, "tickets.log.field_claimed_by"),
         value: `<@${payload.claimerId}>`,
         inline: true,
+      });
+    }
+
+    if (payload.reason) {
+      const trimmed =
+        payload.reason.length > 1020
+          ? payload.reason.slice(0, 1020) + "\u2026"
+          : payload.reason;
+      fields.push({
+        name: await t(gid, "tickets.log.field_reason"),
+        value: trimmed,
+        inline: false,
       });
     }
 

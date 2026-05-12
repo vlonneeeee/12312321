@@ -168,6 +168,9 @@ model Guild {
   ticketRatingEnabled  Boolean @default(true)  // ask author for 1-5 rating before deleting channel
   ticketRatingRequired Boolean @default(false) // if true, channel deletion is delayed up to 5 min waiting for a rating
 
+  // tickets — 2.1
+  ticketCloseConfirm   Boolean @default(true)  // show confirm prompt before channel deletion
+
   prefix         String   @default("!")
 
   members       GuildMember[]
@@ -617,6 +620,11 @@ model Ticket {
   ratingComment  String?   @db.Text
   ratedAt        DateTime?
 
+  // tickets 2.1
+  priority       Int       @default(0)     // -1=low, 0=normal, 1=high, 2=urgent
+  closeReason    String?   @db.Text        // optional staff-provided reason at close
+  frozen         Boolean   @default(false) // when true only staff/claimer can send messages
+
   guild   Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
   author  User  @relation("TicketAuthor",  fields: [authorId],  references: [id])
   claimer User? @relation("TicketClaimer", fields: [claimerId], references: [id])
@@ -626,6 +634,7 @@ model Ticket {
   @@index([guildId, closedAt])
   @@index([authorId, status])
   @@index([guildId, category])
+  @@index([guildId, priority])
 }
 
 // -------------------- ROLES --------------------

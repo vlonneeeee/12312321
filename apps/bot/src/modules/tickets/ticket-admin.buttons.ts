@@ -13,7 +13,7 @@ import { errorEmbed, infoEmbed, successEmbed } from "@shared/embeds/factory";
 import { t } from "@core/i18n";
 import { child } from "@core/logger/logger";
 import { prisma } from "@core/db/prisma";
-import { isStaff } from "@shared/utils/perms";
+import { isTicketStaff } from "@shared/utils/perms";
 
 const log = child("tickets:admin-buttons");
 
@@ -65,7 +65,7 @@ export async function ensureAdminButton(
     return false;
   }
   if (ticket.claimerId === member.id) return true;
-  if (await isStaff(member)) return true;
+  if (await isTicketStaff(member)) return true;
   await interaction
     .reply({
       embeds: [

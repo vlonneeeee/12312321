@@ -22,7 +22,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "@core/config/env";
-import { isStaff } from "@shared/utils/perms";
+import { isTicketStaff } from "@shared/utils/perms";
 import {
   extractAttachmentUrls,
   postTicketClosed,
@@ -48,7 +48,7 @@ export interface TicketModalField {
 
 /**
  * Policy for who can claim a ticket created from this category.
- *   "staff"  — default. Anyone with isStaff() (ManageGuild or staffRoleIds).
+ *   "staff"  — default. Strict ticket staff only (server owner + Guild.staffRoleIds, no ManageGuild bypass).
  *   "anyone" — any guild member, like Ticket Tool's open-claim mode.
  *   string[] — list of role IDs allowed to claim.
  */
@@ -272,10 +272,10 @@ async function canClaim(
   const policy = category?.claimableBy ?? "staff";
   if (policy === "anyone") return true;
   if (Array.isArray(policy)) {
-    if (await isStaff(member)) return true;
+    if (await isTicketStaff(member)) return true;
     return memberHasAnyRole(member, policy);
   }
-  return isStaff(member);
+  return isTicketStaff(member);
 }
 
 /**
@@ -795,8 +795,7 @@ export class TicketService {
    *     anyone who opens a ticket would be able to add/remove arbitrary
    *     members to it.
    *   - The current claimer is always allowed.
-   *   - Server staff (isStaff: guild owner / ManageGuild perm /
-   *     Guild.staffRoleIds) are allowed.
+   *   - Ticket staff (literal guild owner / Guild.staffRoleIds only) are allowed.
    */
   async assertCanModerate(
     ticket: {
@@ -813,7 +812,7 @@ export class TicketService {
       );
     }
     if (ticket.claimerId && ticket.claimerId === member.id) return;
-    if (await isStaff(member)) return;
+    if (await isTicketStaff(member)) return;
     throw new UserFacingError(
       await t(ticket.guildId, "tickets.admin.forbidden"),
     );

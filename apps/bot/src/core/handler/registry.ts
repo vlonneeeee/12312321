@@ -114,9 +114,35 @@ export class CommandRegistry {
     return null;
   }
 
+  /**
+   * Returns the commands that should be deployed to Discord. OWNER actions
+   * never leave the process — they are routed internally via
+   * `modules/owner/router/owner-router.ts`. Anything marked `ownerOnly` is
+   * filtered out of every REST call below, so the public application
+   * command quota is reserved entirely for guild-facing commands.
+   */
+  private publicCommands(): SlashCommand[] {
+    const out: SlashCommand[] = [];
+    let suppressed = 0;
+    for (const cmd of this.commands.values()) {
+      if (cmd.ownerOnly) {
+        suppressed += 1;
+        continue;
+      }
+      out.push(cmd);
+    }
+    if (suppressed > 0) {
+      log.info(
+        { suppressed },
+        "owner commands suppressed from Discord deploy (handled by OwnerRouter)",
+      );
+    }
+    return out;
+  }
+
   async deploy(clientId: string, knownGuildIds: string[] = []): Promise<void> {
     const rest = new REST({ version: "10" }).setToken(env.DISCORD_TOKEN);
-    const body = this.commands.map((c) => c.data.toJSON());
+    const body = this.publicCommands().map((c) => c.data.toJSON());
 
     if (env.DEV_GUILD_IDS.length > 0 && env.isDev) {
       // Guild-only deploy: purge ALL global commands so Discord doesn't show

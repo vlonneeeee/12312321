@@ -1,6 +1,10 @@
 import { EmbedBuilder } from "discord.js";
 import { Colors, type ColorKey } from "./colors";
 
+/**
+ * Central embed factory. Every module should build its embeds through one of
+ * these helpers so colours, glyphs and footer style stay consistent.
+ */
 export function makeEmbed(
   type: ColorKey,
   title: string,
@@ -25,4 +29,12 @@ export function warnEmbed(title: string, description?: string) {
 
 export function infoEmbed(title: string, description?: string) {
   return makeEmbed("primary", title, description);
+}
+
+/**
+ * Branded embed for OWNER-only output (purple/premium accent so it visually
+ * stands out from regular admin replies).
+ */
+export function ownerEmbed(title: string, description?: string) {
+  return makeEmbed("premium", `★ OWN · ${title}`, description);
 }

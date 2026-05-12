@@ -34,7 +34,8 @@
       "roles": "Roles",
       "tickets": "Tickets",
       "verification": "Verification",
-      "misc": "Misc"
+      "misc": "Misc",
+      "owner": "Owner"
     },
     "cmd": {
       "247": "Toggle 24/7 mode.",
@@ -110,6 +111,26 @@
       "remind": "Set a reminder.",
       "reminders": "List your active reminders.",
       "reminder-cancel": "Cancel a reminder by short id."
+    },
+    "owner_intro": "Owner-only commands. These bypass Discord permissions and global cooldowns.",
+    "category_intro": "All commands in **{category}**.",
+    "category_footer": "Tip: pass /help command:<name> for full docs · category: {category}",
+    "command_footer": "Inspecting /{name}",
+    "command_not_found": "No command matching `{name}` is available to you.",
+    "select_placeholder": "Pick a category…",
+    "select_option_description": "{count} commands",
+    "button": {
+      "home": "Home",
+      "owner": "Show OWNER"
+    },
+    "field": {
+      "usage": "Usage",
+      "arguments": "Arguments",
+      "examples": "Examples",
+      "category": "Category",
+      "permissions": "Permissions",
+      "permissions_none": "—",
+      "cooldown": "Cooldown"
     }
   },
   "ping": {

@@ -43,7 +43,8 @@
       "roles": "Роли",
       "tickets": "Тикеты",
       "verification": "Верификация",
-      "misc": "Прочее"
+      "misc": "Прочее",
+      "owner": "Владелец"
     },
     "cmd": {
       "247": "Включить/выключить режим 24/7.",
@@ -119,6 +120,26 @@
       "remind": "Поставить напоминание.",
       "reminders": "Список твоих напоминаний.",
       "reminder-cancel": "Отменить напоминание по короткому id."
+    },
+    "owner_intro": "Команды владельца. Игнорируют права Discord и глобальные кулдауны.",
+    "category_intro": "Все команды в категории **{category}**.",
+    "category_footer": "Подсказка: /help command:<имя> для подробной документации · категория: {category}",
+    "command_footer": "Команда /{name}",
+    "command_not_found": "Команда `{name}` не найдена или недоступна вам.",
+    "select_placeholder": "Выберите категорию…",
+    "select_option_description": "Команд: {count}",
+    "button": {
+      "home": "Главное меню",
+      "owner": "OWNER"
+    },
+    "field": {
+      "usage": "Использование",
+      "arguments": "Аргументы",
+      "examples": "Примеры",
+      "category": "Категория",
+      "permissions": "Права",
+      "permissions_none": "—",
+      "cooldown": "Кулдаун"
     }
   },
   "ping": {

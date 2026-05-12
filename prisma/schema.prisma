@@ -1010,3 +1010,49 @@ model Reminder {
   @@index([userId, fired])
   @@index([guildId])
 }
+
+// =============================================================================
+//  OWNER AUDIT (phase 1 — internal OwnerRouter)
+//
+//  Persists every owner action invoked via `modules/owner/router/owner-router`.
+//  Additive-only model — no existing column/table is touched. Safe to deploy
+//  with `prisma migrate deploy` on top of the production database without any
+//  data backfill.
+// =============================================================================
+
+enum OwnerAuditStatus {
+  PENDING
+  OK
+  FAILED
+  FORBIDDEN
+  DISABLED
+  CONFIRMATION_REQUIRED
+}
+
+model OwnerAudit {
+  id              String           @id @default(cuid())
+  /// Discord user id of the OWNER that triggered the action.
+  ownerId         String
+  /// Top-level grouping (e.g. "admin", "economy", "system").
+  category        String
+  /// Specific action within the category (e.g. "forceban", "add-money").
+  action          String
+  /// Sanitised arguments passed to the action handler. Sensitive keys are redacted upstream.
+  payload         Json?
+  /// Optional target id (user / guild / role / resource the action acted on).
+  target          String?
+  /// Lifecycle status of the action. See OwnerAuditStatus.
+  status          OwnerAuditStatus @default(PENDING)
+  /// Wall-clock execution time of the handler, in milliseconds.
+  executionTimeMs Int?
+  /// Human-readable error message when status != OK.
+  errorMessage    String?          @db.Text
+  /// Additional structured metadata: source, correlationId, guildId, etc.
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+
+  @@index([ownerId])
+  @@index([category, action])
+  @@index([status])
+  @@index([createdAt])
+}

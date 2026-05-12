@@ -7,7 +7,7 @@ import {
 import { defineEvent } from "@core/handler/event";
 import { registry } from "@core/handler/registry";
 import { RateLimiter } from "@core/ratelimit/rate-limiter";
-import { isOwner } from "@shared/utils/perms";
+import { canBypassPermissions, isOwner } from "@shared/utils/perms";
 import { errorEmbed } from "@shared/embeds/factory";
 import { UserFacingError } from "@core/errors/errors";
 import { child } from "@core/logger/logger";
@@ -15,7 +15,20 @@ import { t } from "@core/i18n";
 
 const log = child("interactions");
 
-const commandCooldown = new RateLimiter("cmd", 5, 5); // 5 commands / 5s per user
+// Global per-user soft rate limit. OWNERS bypass.
+const commandCooldown = new RateLimiter("cmd", 5, 5);
+// Optional per-command cooldown bucket. OWNERS bypass.
+const perCommandCooldowns = new Map<string, RateLimiter>();
+
+function getPerCommandLimiter(name: string, seconds: number): RateLimiter {
+  const key = `${name}:${seconds}`;
+  let lim = perCommandCooldowns.get(key);
+  if (!lim) {
+    lim = new RateLimiter(`cmd:${name}`, 1, seconds);
+    perCommandCooldowns.set(key, lim);
+  }
+  return lim;
+}
 
 async function handleInteraction(interaction: Interaction) {
   const meta = {
@@ -32,7 +45,11 @@ async function handleInteraction(interaction: Interaction) {
       if (!cmd) return;
 
       const gid = interaction.guildId;
-      if (cmd.ownerOnly && !isOwner(interaction.user.id)) {
+      const userId = interaction.user.id;
+      const bypass = canBypassPermissions(userId);
+
+      // OWNER-only commands stay strict: a non-owner can never invoke them.
+      if (cmd.ownerOnly && !isOwner(userId)) {
         await interaction.reply({
           embeds: [
             errorEmbed(
@@ -44,6 +61,9 @@ async function handleInteraction(interaction: Interaction) {
         });
         return;
       }
+
+      // guildOnly is enforced for everyone вЂ” Discord rejects guild-scoped
+      // operations from DMs even if the caller is OWNER, so we keep this.
       if (cmd.guildOnly && !interaction.inGuild()) {
         await interaction.reply({
           embeds: [
@@ -56,7 +76,9 @@ async function handleInteraction(interaction: Interaction) {
         });
         return;
       }
-      if (cmd.permissions && interaction.inGuild()) {
+
+      // Standard Discord permission gate. OWNERS bypass.
+      if (cmd.permissions && interaction.inGuild() && !bypass) {
         const member = interaction.member;
         const perms =
           typeof member?.permissions === "string"
@@ -76,18 +98,39 @@ async function handleInteraction(interaction: Interaction) {
         }
       }
 
-      const rl = await commandCooldown.hit(interaction.user.id);
-      if (!rl.ok) {
-        await interaction.reply({
-          embeds: [
-            errorEmbed(
-              await t(gid, "interaction.slow_down_title"),
-              await t(gid, "interaction.slow_down_body"),
-            ),
-          ],
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
+      // Global anti-spam cooldown. OWNERS bypass.
+      if (!bypass) {
+        const rl = await commandCooldown.hit(userId);
+        if (!rl.ok) {
+          await interaction.reply({
+            embeds: [
+              errorEmbed(
+                await t(gid, "interaction.slow_down_title"),
+                await t(gid, "interaction.slow_down_body"),
+              ),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+      }
+
+      // Per-command cooldown. OWNERS bypass.
+      if (!bypass && cmd.cooldownSec && cmd.cooldownSec > 0) {
+        const lim = getPerCommandLimiter(cmd.data.name, cmd.cooldownSec);
+        const rl = await lim.hit(userId);
+        if (!rl.ok) {
+          await interaction.reply({
+            embeds: [
+              errorEmbed(
+                await t(gid, "interaction.slow_down_title"),
+                await t(gid, "interaction.slow_down_body"),
+              ),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
       }
 
       await cmd.execute(interaction);

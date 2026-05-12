@@ -1,4 +1,4 @@
-﻿import { config as loadDotenv } from "dotenv";
+import { config as loadDotenv } from "dotenv";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { z } from "zod";
@@ -48,6 +48,8 @@ const envSchema = z.object({
   DISCORD_PUBLIC_KEY: z.string().optional().default(""),
   DEV_GUILD_IDS: z.string().optional().default(""),
   OWNER_IDS: z.string().optional().default(""),
+  // Backwards-compatible singular alias. Either OWNER_IDS or OWNER_ID work.
+  OWNER_ID: z.string().optional().default(""),
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
@@ -84,10 +86,18 @@ if (!parsed.success) {
 
 const raw = parsed.data;
 
+// Merge OWNER_IDS (CSV) and OWNER_ID (singular) into a single unique list so
+// users can configure either variable without breaking the existing schema.
+const ownerIds = Array.from(
+  new Set([...csv(raw.OWNER_IDS), ...csv(raw.OWNER_ID)]),
+);
+
 export const env = {
   ...raw,
   DEV_GUILD_IDS: csv(raw.DEV_GUILD_IDS),
-  OWNER_IDS: csv(raw.OWNER_IDS),
+  OWNER_IDS: ownerIds,
+  /** Convenience accessor for the primary OWNER. */
+  OWNER_ID: ownerIds[0] ?? "",
   isProd: raw.NODE_ENV === "production",
   isDev: raw.NODE_ENV === "development",
 } as const;

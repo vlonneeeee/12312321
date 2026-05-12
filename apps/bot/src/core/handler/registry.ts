@@ -119,11 +119,23 @@ export class CommandRegistry {
     const body = this.commands.map((c) => c.data.toJSON());
 
     if (env.DEV_GUILD_IDS.length > 0 && env.isDev) {
+      // When deploying to specific dev guilds, also purge any stale global
+      // commands that may have been registered on a previous run. Without
+      // this Discord shows both the global and guild copy in the picker
+      // (the user sees "/ticket-panel" twice, etc).
+      await rest
+        .put(Routes.applicationCommands(clientId), { body: [] })
+        .then(() => log.info("purged stale global commands"))
+        .catch((err) => log.warn({ err }, "could not purge global commands"));
+
       for (const guildId of env.DEV_GUILD_IDS) {
         await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body });
         log.info({ guildId, count: body.length }, "guild slash commands deployed");
       }
     } else {
+      // Global deploy: also purge any leftover guild-specific commands in the
+      // dev guilds we previously deployed to, so we don't end up with the
+      // mirrored duplicates problem in reverse.
       await rest.put(Routes.applicationCommands(clientId), { body });
       log.info({ count: body.length }, "global slash commands deployed");
     }

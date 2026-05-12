@@ -89,7 +89,7 @@ export async function createBot(): Promise<Client> {
   client.once("ready", async (c) => {
     log.info({ tag: c.user.tag, guilds: c.guilds.cache.size }, "client ready");
     try {
-      await registry.deploy(c.user.id);
+      await registry.deploy(c.user.id, c.guilds.cache.map((g) => g.id));
     } catch (err) {
       log.error({ err }, "failed to deploy commands");
     }

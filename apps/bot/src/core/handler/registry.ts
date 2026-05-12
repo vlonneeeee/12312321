@@ -114,15 +114,13 @@ export class CommandRegistry {
     return null;
   }
 
-  async deploy(clientId: string): Promise<void> {
+  async deploy(clientId: string, knownGuildIds: string[] = []): Promise<void> {
     const rest = new REST({ version: "10" }).setToken(env.DISCORD_TOKEN);
     const body = this.commands.map((c) => c.data.toJSON());
 
     if (env.DEV_GUILD_IDS.length > 0 && env.isDev) {
-      // When deploying to specific dev guilds, also purge any stale global
-      // commands that may have been registered on a previous run. Without
-      // this Discord shows both the global and guild copy in the picker
-      // (the user sees "/ticket-panel" twice, etc).
+      // Guild-only deploy: purge ALL global commands so Discord doesn't show
+      // a duplicate "/ticket-panel" (global + guild copy) in the picker.
       await rest
         .put(Routes.applicationCommands(clientId), { body: [] })
         .then(() => log.info("purged stale global commands"))
@@ -133,9 +131,16 @@ export class CommandRegistry {
         log.info({ guildId, count: body.length }, "guild slash commands deployed");
       }
     } else {
-      // Global deploy: also purge any leftover guild-specific commands in the
-      // dev guilds we previously deployed to, so we don't end up with the
-      // mirrored duplicates problem in reverse.
+      // Global deploy: a previous run may have registered the same commands
+      // GUILD-scoped (when DEV_GUILD_IDS was set), leaving duplicates that
+      // Discord still shows ("/ticket-panel" twice). Wipe guild-scoped
+      // commands in every guild the bot is currently a member of.
+      for (const guildId of knownGuildIds) {
+        await rest
+          .put(Routes.applicationGuildCommands(clientId, guildId), { body: [] })
+          .then(() => log.info({ guildId }, "purged stale guild commands"))
+          .catch((err) => log.warn({ err, guildId }, "could not purge guild commands"));
+      }
       await rest.put(Routes.applicationCommands(clientId), { body });
       log.info({ count: body.length }, "global slash commands deployed");
     }

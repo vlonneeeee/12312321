@@ -16,8 +16,10 @@
          wait for healthy.
       5. Schema: prisma generate + prisma migrate deploy.
       6. App start, depending on -Mode:
-           docker : docker compose up -d --build bot web (default)
-           dev    : pnpm bot:dev + pnpm web:dev in two windows
+           local  : docker compose up -d for infra, then `pnpm bot:build` and
+                    `pnpm bot:start` in this same window (default for testing)
+           docker : docker compose up -d --build bot web (full container build)
+           dev    : pnpm bot:dev + pnpm web:dev in two windows (HMR)
            bot    : docker bot only (no web)
       7. Optional log tail (-Tail).
 
@@ -43,8 +45,8 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('docker', 'dev', 'bot')]
-    [string]$Mode = 'docker',
+    [ValidateSet('local', 'docker', 'dev', 'bot')]
+    [string]$Mode = 'local',
     [switch]$Tail,
     [switch]$SkipInstall,
     [switch]$SkipMigrate
@@ -255,15 +257,24 @@ if (-not $SkipInstall) {
 # --------------------------------------------------------------------
 
 if ($Mode -ne 'dev') {
-    Step '4/6' 'Bringing up infrastructure (postgres / redis / lavalink / adminer)'
+    if ($Mode -eq 'local') {
+        Step '4/6' 'Bringing up infrastructure (postgres / redis only — local bot mode)'
+    } else {
+        Step '4/6' 'Bringing up infrastructure (postgres / redis / lavalink / adminer)'
+    }
     Push-Location $RepoRoot
     try {
-        docker compose up -d postgres redis lavalink adminer
+        if ($Mode -eq 'local') {
+            docker compose up -d postgres redis
+        } else {
+            docker compose up -d postgres redis lavalink adminer
+        }
         if ($LASTEXITCODE -ne 0) { throw "docker compose up failed (exit $LASTEXITCODE)" }
     } finally {
         Pop-Location
     }
-    foreach ($svc in 'postgres', 'redis', 'lavalink') {
+    $svcsToCheck = if ($Mode -eq 'local') { @('postgres', 'redis') } else { @('postgres', 'redis', 'lavalink') }
+    foreach ($svc in $svcsToCheck) {
         Push-Location $RepoRoot
         try {
             if (Wait-DockerService $svc 90) {
@@ -309,6 +320,16 @@ Step '6/6' "Starting app (mode=$Mode)"
 Push-Location $RepoRoot
 try {
     switch ($Mode) {
+        'local' {
+            Write-Host '  Building bot …'
+            pnpm bot:build
+            if ($LASTEXITCODE -ne 0) { throw "pnpm bot:build failed (exit $LASTEXITCODE)" }
+            Ok 'bot built successfully'
+            Write-Host ''
+            Write-Host '=== Starting bot (Ctrl+C to stop) ===' -ForegroundColor Cyan
+            pnpm bot:start
+            # Falls through to the "=== Done. ===" line after Ctrl+C.
+        }
         'docker' {
             docker compose up -d --build bot web
             if ($LASTEXITCODE -ne 0) { throw "docker compose up bot/web failed (exit $LASTEXITCODE)" }

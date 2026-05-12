@@ -30,7 +30,7 @@ const fakeban: SlashCommand = {
     const reason = interaction.options.getString("reason") ?? "violation of trust";
     const embed = new EmbedBuilder()
       .setColor(Colors.danger)
-      .setTitle("рџ”Ё User banned")
+      .setTitle("🔨 User banned")
       .setDescription(`**${user.tag}** has been banned.\n**Reason:** ${reason}`)
       .setThumbnail(user.displayAvatarURL({ size: 128 }))
       .setFooter({ text: "Bans are permanent." });
@@ -143,9 +143,9 @@ const trollEmbed: SlashCommand = {
     }
     const embed = new EmbedBuilder()
       .setColor(Colors.warning)
-      .setTitle("вљ  Server announcement вљ ")
+      .setTitle("⚠ Server announcement ⚠")
       .setDescription(body)
-      .setFooter({ text: "Official notice В· do not reply" });
+      .setFooter({ text: "Official notice · do not reply" });
     await (interaction.channel as TextChannel).send({ embeds: [embed] });
     await interaction.reply({
       embeds: [ownerEmbed("Posted")],

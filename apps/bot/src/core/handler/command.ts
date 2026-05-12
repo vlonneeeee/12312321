@@ -20,7 +20,7 @@ export type SlashCommandData =
 export interface SlashCommandMeta {
   /** Long human description for the per-command help page. */
   longDescription?: string;
-  /** "/ban <user> [reason]" вЂ” overrides auto-derived usage. */
+  /** "/ban <user> [reason]" — overrides auto-derived usage. */
   usage?: string;
   /** Realistic invocation examples. */
   examples?: string[];

@@ -53,7 +53,7 @@ const createRole: SlashCommand = {
         reason: `OWNER /create-role by ${interaction.user.tag}`,
       });
       await interaction.reply({
-        embeds: [ownerEmbed("Role created", `<@&${role.id}> В· id=${role.id}`)],
+        embeds: [ownerEmbed("Role created", `<@&${role.id}> · id=${role.id}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -164,7 +164,7 @@ const createChannel: SlashCommand = {
         reason: `OWNER /create-channel by ${interaction.user.tag}`,
       });
       await interaction.reply({
-        embeds: [ownerEmbed("Channel created", `<#${channel.id}> В· id=${channel.id}`)],
+        embeds: [ownerEmbed("Channel created", `<#${channel.id}> · id=${channel.id}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -298,7 +298,7 @@ const massRole: SlashCommand = {
         embeds: [
           ownerEmbed(
             "Mass role complete",
-            `Scanned: ${targets.size} В· Changed: **${changed}** В· Failed: ${failed}`,
+            `Scanned: ${targets.size} · Changed: **${changed}** · Failed: ${failed}`,
           ),
         ],
       });
@@ -594,7 +594,7 @@ const restoreBackup: SlashCommand = {
         embeds: [
           successEmbed(
             "Restore complete",
-            `Created roles: ${createdRoles} В· Created channels: ${createdChannels}`,
+            `Created roles: ${createdRoles} · Created channels: ${createdChannels}`,
           ),
         ],
       });

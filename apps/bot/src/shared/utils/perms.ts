@@ -10,7 +10,7 @@ export function isOwner(userId: string): boolean {
  * OWNER bypass: returns true if the user can ignore Discord permission checks,
  * cooldowns, DJ-role gates, etc. enforced by the interaction handler.
  *
- * This is the single source of truth вЂ” every higher-level guard should
+ * This is the single source of truth — every higher-level guard should
  * funnel through here so OWNER behaviour stays consistent.
  */
 export function canBypassPermissions(userId: string): boolean {

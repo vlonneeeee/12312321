@@ -40,7 +40,7 @@ const help: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("help")
     .setDescription("Show available commands.")
-    .setDescriptionLocalizations({ ru: "РџРѕРєР°Р·Р°С‚СЊ СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ." })
+    .setDescriptionLocalizations({ ru: "Показать список команд." })
     .addStringOption((o) =>
       o
         .setName("command")
@@ -110,7 +110,7 @@ export function overviewPayload(
   for (const view of views) {
     const lines = view.commands
       .slice(0, COMMANDS_PER_FIELD)
-      .map((c) => `\`/${c.data.name}\` вЂ” ${commandShortDescription(locale, c)}`);
+      .map((c) => `\`/${c.data.name}\` — ${commandShortDescription(locale, c)}`);
     if (view.commands.length > COMMANDS_PER_FIELD) {
       lines.push(
         tWithLocale(locale, "help.more_in_category", {
@@ -119,7 +119,7 @@ export function overviewPayload(
       );
     }
     embed.addFields({
-      name: `${view.emoji} ${view.label} В· ${view.commands.length}`,
+      name: `${view.emoji} ${view.label} · ${view.commands.length}`,
       value: clamp(lines.join("\n"), MAX_EMBED_FIELD),
       inline: false,
     });
@@ -154,8 +154,8 @@ export function categoryPayload(
   const embed = new EmbedBuilder()
     .setColor(isOwnerCat ? Colors.premium : Colors.primary)
     .setTitle(
-      `${view.emoji} ${view.label} В· ${view.commands.length}` +
-        (isOwnerCat ? " В· OWNER" : ""),
+      `${view.emoji} ${view.label} · ${view.commands.length}` +
+        (isOwnerCat ? " · OWNER" : ""),
     )
     .setDescription(
       isOwnerCat
@@ -168,9 +168,9 @@ export function categoryPayload(
   let current: string[] = [];
   let currentLen = 0;
   for (const c of view.commands) {
-    const line = `\`/${c.data.name}\` вЂ” ${commandShortDescription(locale, c)}`;
+    const line = `\`/${c.data.name}\` — ${commandShortDescription(locale, c)}`;
     if (currentLen + line.length + 1 > MAX_EMBED_FIELD - 16) {
-      fields.push({ name: "В·", value: current.join("\n"), inline: false });
+      fields.push({ name: "·", value: current.join("\n"), inline: false });
       current = [];
       currentLen = 0;
     }
@@ -178,7 +178,7 @@ export function categoryPayload(
     currentLen += line.length + 1;
   }
   if (current.length) {
-    fields.push({ name: "В·", value: current.join("\n"), inline: false });
+    fields.push({ name: "·", value: current.join("\n"), inline: false });
   }
   embed.addFields(fields);
 
@@ -224,7 +224,7 @@ export function commandPayload(
         args
           .map(
             (a) =>
-              `вЂў \`${a.name}\` ${a.required ? "**(required)**" : "(optional)"} вЂ” ${a.description}`,
+              `• \`${a.name}\` ${a.required ? "**(required)**" : "(optional)"} — ${a.description}`,
           )
           .join("\n"),
         MAX_EMBED_FIELD,
@@ -245,7 +245,7 @@ export function commandPayload(
   embed.addFields(
     {
       name: tWithLocale(locale, "help.field.category"),
-      value: `${categoryLabel(locale, cat)}${isOwnerCat ? " В· OWNER" : ""}`,
+      value: `${categoryLabel(locale, cat)}${isOwnerCat ? " · OWNER" : ""}`,
       inline: true,
     },
     {
@@ -255,7 +255,7 @@ export function commandPayload(
     },
     {
       name: tWithLocale(locale, "help.field.cooldown"),
-      value: cmd.cooldownSec ? `${cmd.cooldownSec}s` : "вЂ”",
+      value: cmd.cooldownSec ? `${cmd.cooldownSec}s` : "—",
       inline: true,
     },
   );
@@ -304,14 +304,14 @@ function componentsFor(
     .setCustomId(HOME_ID)
     .setStyle(ButtonStyle.Secondary)
     .setLabel(tWithLocale(locale, "help.button.home"))
-    .setEmoji("рџЏ ");
+    .setEmoji("🏠");
 
-  // The "show OWNER" toggle is only meaningful for OWNERS вЂ” hidden otherwise.
+  // The "show OWNER" toggle is only meaningful for OWNERS — hidden otherwise.
   const ownerBtn = new ButtonBuilder()
     .setCustomId(OWNER_TOGGLE_ID)
     .setStyle(ButtonStyle.Primary)
     .setLabel(tWithLocale(locale, "help.button.owner"))
-    .setEmoji("рџ‘‘");
+    .setEmoji("👑");
 
   const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(homeBtn);
   if (viewerIsOwner) buttons.addComponents(ownerBtn);
@@ -327,7 +327,7 @@ function componentsFor(
 /* -------------------------------------------------------------------------- */
 
 function clamp(value: string, max: number): string {
-  return value.length > max ? value.slice(0, max - 1) + "вЂ¦" : value;
+  return value.length > max ? value.slice(0, max - 1) + "…" : value;
 }
 
 export const HELP_CUSTOM_IDS = {
@@ -345,7 +345,7 @@ const ping: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("ping")
     .setDescription("Check bot latency.")
-    .setDescriptionLocalizations({ ru: "РџСЂРѕРІРµСЂРёС‚СЊ Р·Р°РґРµСЂР¶РєСѓ Р±РѕС‚Р°." }),
+    .setDescriptionLocalizations({ ru: "Проверить задержку бота." }),
   meta: {
     longDescription: "Reports the websocket ping and the round-trip reply latency.",
     examples: ["/ping"],

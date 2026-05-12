@@ -96,7 +96,7 @@ const evalCmd: SlashCommand = {
         ? result
         : inspect(result, { depth, maxArrayLength: 50, breakLength: 80 });
 
-    const clipped = rendered.length > 1800 ? rendered.slice(0, 1800) + "\nвЂ¦(truncated)" : rendered;
+    const clipped = rendered.length > 1800 ? rendered.slice(0, 1800) + "\n…(truncated)" : rendered;
 
     const embed = (success ? ownerEmbed("/eval result", null as unknown as string) : errorEmbed("/eval failed"))
       .setDescription(`Took: \`${took}ms\`\n\n\`\`\`js\n${clipped}\n\`\`\``);
@@ -171,8 +171,8 @@ const reloadCmd: SlashCommand = {
             [
               `Scope: \`${scope}\``,
               `Modules purged: **${purged}**`,
-              `Commands: ${before.commands} в†’ **${registry.commands.size}**`,
-              `Events:   ${before.events} в†’ **${registry.events.length}**`,
+              `Commands: ${before.commands} → **${registry.commands.size}**`,
+              `Events:   ${before.events} → **${registry.events.length}**`,
               "",
               "Note: events re-registered in-process only on next listener attach. Bot restart recommended for event scope.",
             ].join("\n"),
@@ -226,11 +226,11 @@ const guildInfo: SlashCommand = {
     const dbGuild = await prisma.guild.findUnique({ where: { id: g.id } });
     const embed = new EmbedBuilder()
       .setColor(Colors.premium)
-      .setTitle(`в… OWN В· Guild ${g.name}`)
+      .setTitle(`★ OWN · Guild ${g.name}`)
       .setThumbnail(g.iconURL({ size: 128 }) ?? null)
       .addFields(
         { name: "ID", value: g.id, inline: true },
-        { name: "Owner", value: owner ? `${owner.user.tag} (${owner.id})` : "вЂ”", inline: true },
+        { name: "Owner", value: owner ? `${owner.user.tag} (${owner.id})` : "—", inline: true },
         { name: "Members", value: String(g.memberCount), inline: true },
         { name: "Created", value: `<t:${Math.floor(g.createdTimestamp / 1000)}:R>`, inline: true },
         { name: "Channels", value: String(g.channels.cache.size), inline: true },
@@ -240,7 +240,7 @@ const guildInfo: SlashCommand = {
         { name: "Locale", value: g.preferredLocale, inline: true },
         {
           name: "DB record",
-          value: dbGuild ? `lang=${dbGuild.language} В· staffRoles=${dbGuild.staffRoleIds.length}` : "(not seeded)",
+          value: dbGuild ? `lang=${dbGuild.language} · staffRoles=${dbGuild.staffRoleIds.length}` : "(not seeded)",
           inline: false,
         },
       );
@@ -283,7 +283,7 @@ const userInfoAdvanced: SlashCommand = {
     ]);
     const embed = new EmbedBuilder()
       .setColor(Colors.premium)
-      .setTitle(`в… OWN В· ${user.tag}`)
+      .setTitle(`★ OWN · ${user.tag}`)
       .setThumbnail(user.displayAvatarURL({ size: 128 }))
       .addFields(
         { name: "ID", value: user.id, inline: true },
@@ -294,7 +294,7 @@ const userInfoAdvanced: SlashCommand = {
       embed.addFields(
         { name: "Global wallet", value: formatNumber(u.globalBalance), inline: true },
         { name: "Global bank", value: formatNumber(u.globalBank), inline: true },
-        { name: "Level / XP", value: `${u.level} В· ${formatNumber(u.xp)}`, inline: true },
+        { name: "Level / XP", value: `${u.level} · ${formatNumber(u.xp)}`, inline: true },
         { name: "Reputation", value: String(u.reputation), inline: true },
         { name: "Blacklisted", value: String(u.isBlacklisted), inline: true },
         { name: "Risk score", value: String(u.globalRiskScore), inline: true },
@@ -308,8 +308,8 @@ const userInfoAdvanced: SlashCommand = {
         value: txns
           .map(
             (t) =>
-              `\`${t.type}\` ${t.amount >= 0n ? "+" : ""}${formatNumber(t.amount)} в†’ ${formatNumber(t.balance)}${
-                t.guildId ? ` В· g:${t.guildId.slice(0, 6)}` : ""
+              `\`${t.type}\` ${t.amount >= 0n ? "+" : ""}${formatNumber(t.amount)} → ${formatNumber(t.balance)}${
+                t.guildId ? ` · g:${t.guildId.slice(0, 6)}` : ""
               }`,
           )
           .join("\n")
@@ -320,7 +320,7 @@ const userInfoAdvanced: SlashCommand = {
     if (cases.length) {
       embed.addFields({
         name: "Recent mod cases",
-        value: cases.map((c) => `\`${c.action}\` В· ${c.reason ?? "no reason"}`).join("\n").slice(0, 1024),
+        value: cases.map((c) => `\`${c.action}\` · ${c.reason ?? "no reason"}`).join("\n").slice(0, 1024),
         inline: false,
       });
     }
@@ -362,7 +362,7 @@ const cacheStats: SlashCommand = {
 
     const embed = new EmbedBuilder()
       .setColor(Colors.premium)
-      .setTitle("в… OWN В· Cache stats")
+      .setTitle("★ OWN · Cache stats")
       .setDescription(rows.map(([k, v]) => `**${k}**: ${formatNumber(v)}`).join("\n"))
       .addFields({ name: "Redis keys", value: redisSize, inline: true });
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
@@ -396,7 +396,7 @@ const memoryUsage: SlashCommand = {
     const fmt = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
     const embed = new EmbedBuilder()
       .setColor(Colors.premium)
-      .setTitle("в… OWN В· Memory usage")
+      .setTitle("★ OWN · Memory usage")
       .addFields(
         { name: "RSS", value: fmt(m.rss), inline: true },
         { name: "Heap used", value: fmt(m.heapUsed), inline: true },
@@ -435,7 +435,7 @@ const botStats: SlashCommand = {
     ]);
     const embed = new EmbedBuilder()
       .setColor(Colors.premium)
-      .setTitle("в… OWN В· Bot statistics")
+      .setTitle("★ OWN · Bot statistics")
       .addFields(
         { name: "Guilds", value: formatNumber(c.guilds.cache.size), inline: true },
         { name: "Users (cached)", value: formatNumber(c.users.cache.size), inline: true },
@@ -471,10 +471,10 @@ const shardsCmd: SlashCommand = {
     const c = interaction.client;
     const lines: string[] = [];
     if (c.ws.shards.size === 0) {
-      lines.push(`#0 В· status=ready В· ping=${c.ws.ping}ms`);
+      lines.push(`#0 · status=ready · ping=${c.ws.ping}ms`);
     } else {
       for (const shard of c.ws.shards.values()) {
-        lines.push(`#${shard.id} В· status=${shard.status} В· ping=${shard.ping}ms`);
+        lines.push(`#${shard.id} · status=${shard.status} · ping=${shard.ping}ms`);
       }
     }
     await interaction.reply({
@@ -502,7 +502,7 @@ const latencyDetailed: SlashCommand = {
     const ws = interaction.client.ws.ping;
 
     const restStart = performance.now();
-    await interaction.editReply({ content: "вЂ¦" });
+    await interaction.editReply({ content: "…" });
     const restMs = (performance.now() - restStart).toFixed(1);
 
     const dbStart = performance.now();
@@ -528,7 +528,7 @@ const latencyDetailed: SlashCommand = {
       embeds: [
         new EmbedBuilder()
           .setColor(Colors.premium)
-          .setTitle("в… OWN В· Latency")
+          .setTitle("★ OWN · Latency")
           .addFields(
             { name: "Gateway WS", value: `${ws} ms`, inline: true },
             { name: "REST round-trip", value: `${restMs} ms`, inline: true },

@@ -62,7 +62,7 @@ async function handleInteraction(interaction: Interaction) {
         return;
       }
 
-      // guildOnly is enforced for everyone вЂ” Discord rejects guild-scoped
+      // guildOnly is enforced for everyone — Discord rejects guild-scoped
       // operations from DMs even if the caller is OWNER, so we keep this.
       if (cmd.guildOnly && !interaction.inGuild()) {
         await interaction.reply({

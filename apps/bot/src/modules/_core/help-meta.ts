@@ -11,28 +11,28 @@ import { isOwner } from "@shared/utils/perms";
 export const OWNER_CATEGORY = "owner";
 
 export const CATEGORY_EMOJIS: Record<string, string> = {
-  core: "рџЏ ",
-  admin: "рџ› пёЏ",
-  moderation: "рџ›ЎпёЏ",
-  music: "рџЋµ",
-  economy: "рџ’°",
-  casino: "рџЋ°",
-  tickets: "рџЋ«",
-  clans: "вљ”пёЏ",
-  events: "рџ“…",
-  profile: "рџ‘¤",
-  leaderboard: "рџЏ†",
-  news: "рџ“°",
-  polls: "рџ“Љ",
-  roles: "рџЋЁ",
-  housing: "рџЏпёЏ",
-  metaverse: "рџЊЊ",
-  analytics: "рџ“€",
-  verification: "вњ…",
-  levels: "в­ђ",
-  general: "рџ§©",
-  misc: "рџ“¦",
-  [OWNER_CATEGORY]: "рџ‘‘",
+  core: "🏠",
+  admin: "🛠️",
+  moderation: "🛡️",
+  music: "🎵",
+  economy: "💰",
+  casino: "🎰",
+  tickets: "🎫",
+  clans: "⚔️",
+  events: "📅",
+  profile: "👤",
+  leaderboard: "🏆",
+  news: "📰",
+  polls: "📊",
+  roles: "🎨",
+  housing: "🏘️",
+  metaverse: "🌌",
+  analytics: "📈",
+  verification: "✅",
+  levels: "⭐",
+  general: "🧩",
+  misc: "📦",
+  [OWNER_CATEGORY]: "👑",
 };
 
 /**
@@ -74,7 +74,7 @@ export function buildCategoryViews(
     views.push({
       key,
       label: categoryLabel(locale, key),
-      emoji: CATEGORY_EMOJIS[key] ?? "рџ“¦",
+      emoji: CATEGORY_EMOJIS[key] ?? "📦",
       commands: cmds,
     });
   }
@@ -143,7 +143,7 @@ export function deriveArgList(
     ) {
       out.push({
         name: opt.name,
-        description: (opt as { description?: string }).description ?? "вЂ”",
+        description: (opt as { description?: string }).description ?? "—",
         required: false,
       });
       continue;
@@ -151,7 +151,7 @@ export function deriveArgList(
     const o = opt as { description?: string; required?: boolean };
     out.push({
       name: opt.name,
-      description: o.description ?? "вЂ”",
+      description: o.description ?? "—",
       required: o.required ?? false,
     });
   }

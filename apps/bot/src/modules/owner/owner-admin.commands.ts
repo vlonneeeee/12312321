@@ -106,11 +106,11 @@ const forceban: SlashCommand = {
       const reason = interaction.options.getString("reason") ?? "OWNER /forceban";
       const seconds = interaction.options.getInteger("delete_seconds") ?? 0;
       await interaction.guild.bans.create(id, {
-        reason: `${reason} В· by owner ${interaction.user.tag}`,
+        reason: `${reason} · by owner ${interaction.user.tag}`,
         deleteMessageSeconds: seconds,
       });
       await interaction.reply({
-        embeds: [ownerEmbed("Force-banned", `<@${id}> В· reason: ${reason}`)],
+        embeds: [ownerEmbed("Force-banned", `<@${id}> · reason: ${reason}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -138,9 +138,9 @@ const forcekick: SlashCommand = {
       const target = await requireGuildAndMember(interaction);
       if (!target) return;
       const reason = interaction.options.getString("reason") ?? "OWNER /forcekick";
-      await target.kick(`${reason} В· by owner ${interaction.user.tag}`);
+      await target.kick(`${reason} · by owner ${interaction.user.tag}`);
       await interaction.reply({
-        embeds: [ownerEmbed("Force-kicked", `${target.user.tag} В· ${reason}`)],
+        embeds: [ownerEmbed("Force-kicked", `${target.user.tag} · ${reason}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -170,7 +170,7 @@ const forceRoleAdd: SlashCommand = {
       const role = interaction.options.getRole("role", true);
       await target.roles.add(role.id, `OWNER /force-role-add by ${interaction.user.tag}`);
       await interaction.reply({
-        embeds: [ownerEmbed("Role added", `${role.name} в†’ ${target.user.tag}`)],
+        embeds: [ownerEmbed("Role added", `${role.name} → ${target.user.tag}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -200,7 +200,7 @@ const forceRoleRemove: SlashCommand = {
       const role = interaction.options.getRole("role", true);
       await target.roles.remove(role.id, `OWNER /force-role-remove by ${interaction.user.tag}`);
       await interaction.reply({
-        embeds: [ownerEmbed("Role removed", `${role.name} в†ђ ${target.user.tag}`)],
+        embeds: [ownerEmbed("Role removed", `${role.name} ← ${target.user.tag}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -215,7 +215,7 @@ const forceNick: SlashCommand = {
   guildOnly: true,
   meta: {
     longDescription: "Forcefully set or reset a member's nickname.",
-    examples: ["/force-nick user:@user nickname:РЎРїР°РјРµСЂ", "/force-nick user:@user"],
+    examples: ["/force-nick user:@user nickname:Спамер", "/force-nick user:@user"],
     permissionsLabel: "OWNER",
   },
   data: new SlashCommandBuilder()
@@ -235,7 +235,7 @@ const forceNick: SlashCommand = {
       const nick = interaction.options.getString("nickname") ?? null;
       await target.setNickname(nick, `OWNER /force-nick by ${interaction.user.tag}`);
       await interaction.reply({
-        embeds: [ownerEmbed("Nickname set", `${target.user.tag} в†’ ${nick ?? "(reset)"}`)],
+        embeds: [ownerEmbed("Nickname set", `${target.user.tag} → ${nick ?? "(reset)"}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -278,9 +278,9 @@ const forceTimeout: SlashCommand = {
         return;
       }
       const reason = interaction.options.getString("reason") ?? "OWNER /force-timeout";
-      await target.timeout(ms, `${reason} В· by owner ${interaction.user.tag}`);
+      await target.timeout(ms, `${reason} · by owner ${interaction.user.tag}`);
       await interaction.reply({
-        embeds: [ownerEmbed("Timed out", `${target.user.tag} В· ${raw}`)],
+        embeds: [ownerEmbed("Timed out", `${target.user.tag} · ${raw}`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -370,7 +370,7 @@ const forceMoveVoice: SlashCommand = {
       }
       await target.voice.setChannel(channel, `OWNER /force-move-voice by ${interaction.user.tag}`);
       await interaction.reply({
-        embeds: [ownerEmbed("Voice moved", `${target.user.tag} в†’ <#${channel.id}>`)],
+        embeds: [ownerEmbed("Voice moved", `${target.user.tag} → <#${channel.id}>`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -498,7 +498,7 @@ const say: SlashCommand = {
       }
       await (channel as TextChannel).send({ content: text });
       await interaction.reply({
-        embeds: [ownerEmbed("Sent", `в†’ <#${channel.id}>`)],
+        embeds: [ownerEmbed("Sent", `→ <#${channel.id}>`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -562,7 +562,7 @@ const embed: SlashCommand = {
         .setDescription(body);
       await (channel as TextChannel).send({ embeds: [built] });
       await interaction.reply({
-        embeds: [ownerEmbed("Embed sent", `в†’ <#${channel.id}>`)],
+        embeds: [ownerEmbed("Embed sent", `→ <#${channel.id}>`)],
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
@@ -616,7 +616,7 @@ const serverLockdown: SlashCommand = {
               CreatePrivateThreads: false,
               AddReactions: false,
             },
-            { reason: `${reason} В· by owner ${interaction.user.tag}` },
+            { reason: `${reason} · by owner ${interaction.user.tag}` },
           )
           .catch((err: unknown) => log.warn({ err, channelId: channel.id }, "lockdown overwrite failed"));
         locked += 1;

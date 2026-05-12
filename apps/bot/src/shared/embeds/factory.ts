@@ -16,15 +16,15 @@ export function makeEmbed(
 }
 
 export function successEmbed(title: string, description?: string) {
-  return makeEmbed("success", `вњ“ ${title}`, description);
+  return makeEmbed("success", `✓ ${title}`, description);
 }
 
 export function errorEmbed(title: string, description?: string) {
-  return makeEmbed("danger", `вњ— ${title}`, description);
+  return makeEmbed("danger", `✗ ${title}`, description);
 }
 
 export function warnEmbed(title: string, description?: string) {
-  return makeEmbed("warning", `вљ  ${title}`, description);
+  return makeEmbed("warning", `⚠ ${title}`, description);
 }
 
 export function infoEmbed(title: string, description?: string) {
@@ -36,5 +36,5 @@ export function infoEmbed(title: string, description?: string) {
  * stands out from regular admin replies).
  */
 export function ownerEmbed(title: string, description?: string) {
-  return makeEmbed("premium", `в… OWN В· ${title}`, description);
+  return makeEmbed("premium", `★ OWN · ${title}`, description);
 }

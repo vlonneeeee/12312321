@@ -59,7 +59,7 @@ const addMoney: SlashCommand = {
         embeds: [
           ownerEmbed(
             "Coins credited",
-            `${user.tag} в†ђ ${formatNumber(amount)} В· scope: \`${scope}\``,
+            `${user.tag} ← ${formatNumber(amount)} · scope: \`${scope}\``,
           ),
         ],
         flags: MessageFlags.Ephemeral,
@@ -116,7 +116,7 @@ const removeMoney: SlashCommand = {
         embeds: [
           ownerEmbed(
             "Coins debited",
-            `${user.tag} в€’ ${formatNumber(amount)} В· scope: \`${scope}\``,
+            `${user.tag} − ${formatNumber(amount)} · scope: \`${scope}\``,
           ),
         ],
         flags: MessageFlags.Ephemeral,
@@ -171,7 +171,7 @@ const setBalance: SlashCommand = {
         embeds: [
           ownerEmbed(
             "Balance set",
-            `${user.tag} в†’ ${formatNumber(amount)} В· scope: \`${scope}\``,
+            `${user.tag} → ${formatNumber(amount)} · scope: \`${scope}\``,
           ),
         ],
         flags: MessageFlags.Ephemeral,
@@ -271,7 +271,7 @@ const giveItem: SlashCommand = {
       });
       await interaction.reply({
         embeds: [
-          ownerEmbed("Item granted", `${user.tag} в†ђ **${shopItem.name}** Г— ${qty}`),
+          ownerEmbed("Item granted", `${user.tag} ← **${shopItem.name}** × ${qty}`),
         ],
         flags: MessageFlags.Ephemeral,
       });
@@ -382,7 +382,7 @@ async function applyEconomySet(
       type: "ADMIN",
       amount: 0n,
       balance: value,
-      reason: `OWNER /set-balance В· ${scope}`,
+      reason: `OWNER /set-balance · ${scope}`,
     },
   });
 }

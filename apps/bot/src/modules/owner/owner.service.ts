@@ -105,15 +105,15 @@ const MEMES = [
   "kekw",
   "Pog",
   "ratio + L",
-  "this is fine рџ”Ґ",
+  "this is fine 🔥",
   "average chat enjoyer",
   "skill issue",
-  "рџ—ї",
+  "🗿",
   "no thoughts head empty",
   "based",
-  "рџ’Ђрџ’Ђрџ’Ђ",
+  "💀💀💀",
 ];
 
 export function randomMeme(): string {
-  return MEMES[Math.floor(Math.random() * MEMES.length)] ?? "рџ¤–";
+  return MEMES[Math.floor(Math.random() * MEMES.length)] ?? "🤖";
 }

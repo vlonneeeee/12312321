@@ -334,9 +334,12 @@ try {
             docker compose up -d --build bot web
             if ($LASTEXITCODE -ne 0) { throw "docker compose up bot/web failed (exit $LASTEXITCODE)" }
             Ok 'bot + web containers running'
-            Write-Host "    web   : http://localhost:$([int]($env_['WEB_PORT'] ?? '3000'))"
-            Write-Host "    bot   : http://localhost:$([int]($env_['BOT_HTTP_PORT'] ?? '3001'))"
-            Write-Host "    adminer: http://localhost:$([int]($env_['ADMINER_PORT'] ?? '8080'))"
+            $webPort     = if ($env_['WEB_PORT'])      { $env_['WEB_PORT'] }      else { '3000' }
+            $botHttpPort = if ($env_['BOT_HTTP_PORT']) { $env_['BOT_HTTP_PORT'] } else { '3001' }
+            $adminerPort = if ($env_['ADMINER_PORT']) { $env_['ADMINER_PORT'] } else { '8080' }
+            Write-Host "    web    : http://localhost:$webPort"
+            Write-Host "    bot    : http://localhost:$botHttpPort"
+            Write-Host "    adminer: http://localhost:$adminerPort"
         }
         'bot' {
             docker compose up -d --build bot

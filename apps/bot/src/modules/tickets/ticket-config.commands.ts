@@ -67,6 +67,85 @@ const ticketsConfig: SlashCommand = {
     )
     .addSubcommand((sc) =>
       sc
+        .setName("close-confirm")
+        .setDescription(
+          "Ask staff to confirm before the ticket channel is deleted.",
+        )
+        .addBooleanOption((o) =>
+          o
+            .setName("enabled")
+            .setDescription("True = show confirm prompt (default).")
+            .setRequired(true),
+        ),
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName("claimable-by")
+        .setDescription(
+          "Who can claim a ticket from this category (staff/anyone/roles).",
+        )
+        .addStringOption((o) =>
+          o.setName("panel").setDescription("Panel ID").setRequired(true),
+        )
+        .addStringOption((o) =>
+          o
+            .setName("category")
+            .setDescription("Category key")
+            .setRequired(true),
+        )
+        .addStringOption((o) =>
+          o
+            .setName("mode")
+            .setDescription("Who is allowed to claim")
+            .setRequired(true)
+            .addChoices(
+              { name: "staff (default)", value: "staff" },
+              { name: "anyone", value: "anyone" },
+              { name: "specific roles", value: "roles" },
+            ),
+        )
+        .addStringOption((o) =>
+          o
+            .setName("roles")
+            .setDescription(
+              "Comma-separated role IDs/mentions (only when mode=roles)",
+            ),
+        ),
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName("ping-roles")
+        .setDescription(
+          "Roles to mention when a ticket is opened in this category.",
+        )
+        .addStringOption((o) =>
+          o.setName("panel").setDescription("Panel ID").setRequired(true),
+        )
+        .addStringOption((o) =>
+          o
+            .setName("category")
+            .setDescription("Category key")
+            .setRequired(true),
+        )
+        .addStringOption((o) =>
+          o
+            .setName("action")
+            .setDescription("Add a role, remove one, or clear all")
+            .setRequired(true)
+            .addChoices(
+              { name: "add", value: "add" },
+              { name: "remove", value: "remove" },
+              { name: "clear", value: "clear" },
+            ),
+        )
+        .addRoleOption((o) =>
+          o
+            .setName("role")
+            .setDescription("Role (required for add/remove)"),
+        ),
+    )
+    .addSubcommand((sc) =>
+      sc
         .setName("rating")
         .setDescription("Configure the post-close rating prompt.")
         .addBooleanOption((o) =>
@@ -289,6 +368,39 @@ const ticketsConfig: SlashCommand = {
       return;
     }
 
+    if (sub === "close-confirm") {
+      const enabled = interaction.options.getBoolean("enabled", true);
+      await prisma.guild.update({
+        where: { id: guildId },
+        data: { ticketCloseConfirm: enabled },
+      });
+      await interaction.reply({
+        embeds: [
+          successEmbed(
+            await t(guildId, "tickets.title"),
+            await t(
+              guildId,
+              enabled
+                ? "tickets.config.close_confirm_on"
+                : "tickets.config.close_confirm_off",
+            ),
+          ),
+        ],
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (sub === "claimable-by") {
+      await handleClaimableBy(interaction, guildId);
+      return;
+    }
+
+    if (sub === "ping-roles") {
+      await handlePingRoles(interaction, guildId);
+      return;
+    }
+
     if (sub === "show") {
       const g = await prisma.guild.findUnique({
         where: { id: guildId },
@@ -328,6 +440,196 @@ const ticketsConfig: SlashCommand = {
 
 function formatChannel(id: string | null | undefined): string {
   return id ? `<#${id}>` : "—";
+}
+
+function parseRoleList(raw: string): string[] {
+  return raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .map((s) => {
+      const m = /^<@&(\d{15,25})>$/.exec(s);
+      if (m) return m[1]!;
+      if (/^\d{15,25}$/.test(s)) return s;
+      return null;
+    })
+    .filter((s): s is string => Boolean(s));
+}
+
+async function handleClaimableBy(
+  interaction: import("discord.js").ChatInputCommandInteraction,
+  guildId: string,
+): Promise<void> {
+  const panelId = interaction.options.getString("panel", true);
+  const categoryKey = interaction.options.getString("category", true);
+  const mode = interaction.options.getString("mode", true) as
+    | "staff"
+    | "anyone"
+    | "roles";
+  const rolesRaw = interaction.options.getString("roles") ?? "";
+
+  const panel = await prisma.ticketPanel.findFirst({
+    where: { id: panelId, guildId },
+  });
+  if (!panel) {
+    await interaction.reply({
+      embeds: [
+        errorEmbed(
+          await t(guildId, "tickets.title"),
+          await t(guildId, "tickets.config.panel_not_found"),
+        ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+  const cats = normalizeCategories(panel.categories);
+  const idx = cats.findIndex((c) => c.key === categoryKey);
+  if (idx === -1) {
+    await interaction.reply({
+      embeds: [
+        errorEmbed(
+          await t(guildId, "tickets.title"),
+          await t(guildId, "tickets.unknown_category"),
+        ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  let value: TicketCategory["claimableBy"];
+  if (mode === "staff") value = "staff";
+  else if (mode === "anyone") value = "anyone";
+  else {
+    const ids = parseRoleList(rolesRaw);
+    if (ids.length === 0) {
+      throw new UserFacingError(
+        await t(guildId, "tickets.config.claimable_roles_required"),
+      );
+    }
+    value = ids;
+  }
+
+  const next: TicketCategory[] = cats.map((c, i) =>
+    i === idx ? { ...c, claimableBy: value } : c,
+  );
+  await prisma.ticketPanel.update({
+    where: { id: panel.id },
+    data: { categories: next as unknown as object },
+  });
+
+  const summary =
+    value === "staff"
+      ? await t(guildId, "tickets.config.claimable_summary_staff")
+      : value === "anyone"
+        ? await t(guildId, "tickets.config.claimable_summary_anyone")
+        : await t(guildId, "tickets.config.claimable_summary_roles", {
+            roles: (value as string[]).map((r) => `<@&${r}>`).join(", "),
+          });
+  await interaction.reply({
+    embeds: [
+      successEmbed(
+        await t(guildId, "tickets.title"),
+        await t(guildId, "tickets.config.claimable_set", {
+          category: categoryKey,
+          summary,
+        }),
+      ),
+    ],
+    ephemeral: true,
+  });
+}
+
+async function handlePingRoles(
+  interaction: import("discord.js").ChatInputCommandInteraction,
+  guildId: string,
+): Promise<void> {
+  const panelId = interaction.options.getString("panel", true);
+  const categoryKey = interaction.options.getString("category", true);
+  const action = interaction.options.getString("action", true) as
+    | "add"
+    | "remove"
+    | "clear";
+  const role = interaction.options.getRole("role");
+
+  const panel = await prisma.ticketPanel.findFirst({
+    where: { id: panelId, guildId },
+  });
+  if (!panel) {
+    await interaction.reply({
+      embeds: [
+        errorEmbed(
+          await t(guildId, "tickets.title"),
+          await t(guildId, "tickets.config.panel_not_found"),
+        ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+  const cats = normalizeCategories(panel.categories);
+  const idx = cats.findIndex((c) => c.key === categoryKey);
+  if (idx === -1) {
+    await interaction.reply({
+      embeds: [
+        errorEmbed(
+          await t(guildId, "tickets.title"),
+          await t(guildId, "tickets.unknown_category"),
+        ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+  const cat = cats[idx]!;
+  const currentIds = cat.pingRoleIds ?? [];
+  let nextIds = currentIds;
+  if (action === "clear") {
+    nextIds = [];
+  } else if (action === "add") {
+    if (!role) {
+      throw new UserFacingError(
+        await t(guildId, "tickets.config.ping_role_required"),
+      );
+    }
+    if (currentIds.includes(role.id)) {
+      nextIds = currentIds;
+    } else {
+      nextIds = [...currentIds, role.id];
+    }
+  } else if (action === "remove") {
+    if (!role) {
+      throw new UserFacingError(
+        await t(guildId, "tickets.config.ping_role_required"),
+      );
+    }
+    nextIds = currentIds.filter((id) => id !== role.id);
+  }
+
+  const next: TicketCategory[] = cats.map((c, i) =>
+    i === idx ? { ...c, pingRoleIds: nextIds } : c,
+  );
+  await prisma.ticketPanel.update({
+    where: { id: panel.id },
+    data: { categories: next as unknown as object },
+  });
+
+  const summary =
+    nextIds.length === 0
+      ? await t(guildId, "tickets.config.ping_summary_none")
+      : nextIds.map((r) => `<@&${r}>`).join(", ");
+  await interaction.reply({
+    embeds: [
+      successEmbed(
+        await t(guildId, "tickets.title"),
+        await t(guildId, "tickets.config.ping_set", {
+          category: categoryKey,
+          summary,
+        }),
+      ),
+    ],
+    ephemeral: true,
+  });
 }
 
 async function handleCategoryModal(

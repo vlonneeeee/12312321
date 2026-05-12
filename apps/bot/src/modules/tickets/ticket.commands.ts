@@ -168,6 +168,34 @@ const ticketClose: ButtonHandler = {
   async execute(interaction, params) {
     const ticketId = params[0];
     if (!ticketId) return;
+    // tickets 2.1: optional confirm prompt before the channel disappears
+    const guildRow = await prisma.guild.findUnique({
+      where: { id: interaction.guildId ?? "" },
+      select: { ticketCloseConfirm: true },
+    });
+    if (guildRow?.ticketCloseConfirm !== false) {
+      const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = await import(
+        "discord.js"
+      );
+      const row = new ActionRowBuilder<import("discord.js").ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ticket:closeyes:${ticketId}`)
+          .setLabel(await t(interaction.guildId, "tickets.close_confirm_yes"))
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId("ticket:closeno")
+          .setLabel(await t(interaction.guildId, "tickets.close_confirm_no"))
+          .setStyle(ButtonStyle.Secondary),
+      );
+      await interaction
+        .reply({
+          content: await t(interaction.guildId, "tickets.close_confirm_prompt"),
+          components: [row],
+          ephemeral: true,
+        })
+        .catch(() => null);
+      return;
+    }
     const { ticketService } = await import("./ticket.service");
     try {
       await ticketService.close(

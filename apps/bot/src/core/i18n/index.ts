@@ -10,6 +10,44 @@ export type Locale = "ru" | "en";
 export const SUPPORTED_LOCALES: Locale[] = ["ru", "en"];
 export const DEFAULT_LOCALE: Locale = "ru";
 
+/**
+ * Recursively walk an i18n bundle and:
+ *   1. Strip a leading UTF-8 BOM from every string value (some Windows
+ *      editors prefix saved JSON values with U+FEFF, which breaks Discord
+ *      embed titles that should start with an emoji).
+ *   2. Emit a warning when a value still contains the classic cp1251 ->
+ *      utf-8 double-encoding mojibake markers — catches future regressions
+ *      where a translator opens the file in a non-UTF-8 editor and re-saves.
+ */
+const MOJIBAKE_PROBES = ["\u0420\u0490", "\u0420\u045E", "\u0420\u0457", "\u0432\u0402"];
+
+function normaliseBundle(bundle: unknown, locale: Locale, path: string[] = []): void {
+  if (bundle && typeof bundle === "object" && !Array.isArray(bundle)) {
+    for (const key of Object.keys(bundle)) {
+      const value = (bundle as Record<string, unknown>)[key];
+      if (typeof value === "string") {
+        let next = value;
+        if (next.charCodeAt(0) === 0xfeff) next = next.slice(1);
+        for (const probe of MOJIBAKE_PROBES) {
+          if (next.includes(probe)) {
+            log.warn(
+              { locale, key: [...path, key].join(".") },
+              "i18n value contains cp1251 mojibake — source file needs re-encoding",
+            );
+            break;
+          }
+        }
+        (bundle as Record<string, unknown>)[key] = next;
+      } else if (value && typeof value === "object") {
+        normaliseBundle(value, locale, [...path, key]);
+      }
+    }
+  }
+}
+
+normaliseBundle(ru, "ru");
+normaliseBundle(en, "en");
+
 const bundles: Record<Locale, Record<string, unknown>> = { ru, en };
 
 const CACHE_TTL_SEC = 300;

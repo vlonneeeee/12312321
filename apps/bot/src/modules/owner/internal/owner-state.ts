@@ -1,17 +1,23 @@
 import { child } from "@core/logger/logger";
 import { redis } from "@core/cache/redis";
 
-const log = child("owner");
+/**
+ * Internal OwnerStateStore. Preserved from the legacy owner module so the
+ * chaos / meme / lockdown semantics remain available to any future panel
+ * action — but with NO public slash-command exposure.
+ *
+ * Phase 1 keeps this as plain TS, callable only from within
+ * `modules/owner/`. The legacy `MessageCreate` listener that drove the
+ * meme-reply behaviour was removed; future phases can re-introduce the
+ * behaviour via an owner action that explicitly enables it.
+ */
+
+const log = child("owner.state");
 
 const CHAOS_KEY = (gid: string) => `owner:chaos:${gid}`;
 const MEME_KEY = (gid: string) => `owner:meme:${gid}`;
 const LOCKDOWN_KEY = (gid: string) => `owner:lockdown:${gid}`;
 
-/**
- * In-process state for OWNER toggles plus Redis mirror for cross-restart
- * persistence. Use the redis-backed `has*` helpers from listeners; the
- * in-process Set is just a fast cache.
- */
 class OwnerStateStore {
   private readonly chaos = new Set<string>();
   private readonly meme = new Set<string>();

@@ -14,6 +14,7 @@ import { connectDatabase, disconnectDatabase } from "@core/db/prisma";
 import { redis } from "@core/cache/redis";
 import { startHttpServer, stopHttpServer } from "@infra/http/server";
 import { startBackgroundJobs, stopBackgroundJobs } from "@infra/jobs/scheduler";
+import { getLavalink } from "@infra/lavalink/manager";
 
 const log = child("bot");
 
@@ -94,6 +95,8 @@ export async function createBot(): Promise<Client> {
   client.on("error", (err) => log.error({ err }, "client error"));
   client.on("warn", (msg) => log.warn(msg));
   if (env.isDev) client.on("debug", (msg) => log.debug(msg));
+
+  getLavalink(client);
 
   await client.login(env.DISCORD_TOKEN);
   await startHttpServer(client);

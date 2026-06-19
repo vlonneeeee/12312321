@@ -14,6 +14,7 @@ import { UserFacingError } from "@core/errors/errors";
 import { eventBus } from "@core/events/event-bus";
 import { successEmbed, infoEmbed } from "@shared/embeds/factory";
 import { child } from "@core/logger/logger";
+import { t } from "@core/i18n";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -40,7 +41,18 @@ export class TicketService {
         where: { guildId: guild.id, authorId: author.id, status: { not: "closed" } },
       });
       if (existing) {
-        throw new UserFacingError(`You already have an open ticket: <#${existing.channelId}>`);
+        const existingChannel = await guild.channels.fetch(existing.channelId).catch(() => null);
+        if (existingChannel) {
+          throw new UserFacingError(
+            await t(guild.id, "tickets.already_open", { channelId: existing.channelId }),
+          );
+        }
+        // Channel was manually deleted but DB row was orphaned. Mark closed and proceed.
+        await prisma.ticket.update({
+          where: { id: existing.id },
+          data: { status: "closed", closedAt: new Date(), closedBy: "system:channel-deleted" },
+        });
+        log.info({ ticketId: existing.id, guildId: guild.id, authorId: author.id }, "reaped orphaned ticket");
       }
       const parentId = category.categoryId ?? (await this.defaultCategory(guild.id));
       const channel = await guild.channels.create({
@@ -99,12 +111,16 @@ export class TicketService {
           .setStyle(ButtonStyle.Danger)
           .setEmoji("🔒"),
       );
+      const subjectText = opts.subject ?? (await t(guild.id, "tickets.subject_none"));
       await channel.send({
         content: `<@${author.id}>`,
         embeds: [
           successEmbed(
-            `Ticket opened`,
-            `Category: **${category.label}**\nSubject: ${opts.subject ?? "(none)"}\nStaff will be with you shortly.`,
+            await t(guild.id, "tickets.ticket_opened_title"),
+            await t(guild.id, "tickets.ticket_opened_body", {
+              category: category.label,
+              subject: subjectText,
+            }),
           ),
         ],
         components: [controls],
@@ -115,8 +131,13 @@ export class TicketService {
 
   async claim(ticketId: string, claimer: GuildMember): Promise<void> {
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
-    if (!ticket || ticket.status === "closed") throw new UserFacingError("Ticket not found.");
-    if (ticket.claimerId) throw new UserFacingError(`Ticket already claimed by <@${ticket.claimerId}>.`);
+    const gid = claimer.guild.id;
+    if (!ticket || ticket.status === "closed") {
+      throw new UserFacingError(await t(gid, "tickets.not_found"));
+    }
+    if (ticket.claimerId) {
+      throw new UserFacingError(await t(gid, "tickets.already_claimed", { claimerId: ticket.claimerId }));
+    }
     await prisma.ticket.update({
       where: { id: ticketId },
       data: { claimerId: claimer.id, claimedAt: new Date(), status: "claimed" },
@@ -124,17 +145,29 @@ export class TicketService {
     const channel = (await claimer.guild.channels.fetch(ticket.channelId).catch(() => null)) as
       | TextChannel
       | null;
-    await channel?.send({ embeds: [infoEmbed("Claimed", `Claimed by <@${claimer.id}>`)] });
+    await channel?.send({
+      embeds: [
+        infoEmbed(
+          await t(gid, "tickets.claimed_title"),
+          await t(gid, "tickets.claimed_body", { claimerId: claimer.id }),
+        ),
+      ],
+    });
   }
 
   async close(ticketId: string, closer: GuildMember): Promise<string> {
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
-    if (!ticket || ticket.status === "closed") throw new UserFacingError("Ticket already closed.");
+    const gid = closer.guild.id;
+    if (!ticket || ticket.status === "closed") {
+      throw new UserFacingError(await t(gid, "tickets.already_closed"));
+    }
     const guild = closer.guild;
     const channel = (await guild.channels.fetch(ticket.channelId).catch(() => null)) as TextChannel | null;
-    if (!channel) throw new UserFacingError("Ticket channel missing.");
 
-    const transcriptUrl = await this.generateTranscript(channel, ticket.id);
+    let transcriptUrl = "";
+    if (channel) {
+      transcriptUrl = await this.generateTranscript(channel, ticket.id);
+    }
     await prisma.ticket.update({
       where: { id: ticketId },
       data: {
@@ -145,8 +178,18 @@ export class TicketService {
       },
     });
     eventBus.emit("ticket.closed", { ticketId, guildId: guild.id, closedBy: closer.id });
-    await channel.delete("Ticket closed").catch(() => null);
+    if (channel) await channel.delete("Ticket closed").catch(() => null);
     return transcriptUrl;
+  }
+
+  async markChannelDeleted(channelId: string): Promise<void> {
+    const ticket = await prisma.ticket.findUnique({ where: { channelId } });
+    if (!ticket || ticket.status === "closed") return;
+    await prisma.ticket.update({
+      where: { id: ticket.id },
+      data: { status: "closed", closedAt: new Date(), closedBy: "system:channel-deleted" },
+    });
+    log.info({ ticketId: ticket.id, channelId }, "ticket auto-closed: channel deleted");
   }
 
   private async defaultCategory(guildId: string): Promise<string | null> {

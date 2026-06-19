@@ -1,6 +1,7 @@
 import { Collection, REST, Routes } from "discord.js";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { env } from "@core/config/env";
 import { child } from "@core/logger/logger";
 import type { ButtonHandler, ModalHandler, SelectMenuHandler, SlashCommand } from "./command";
@@ -17,7 +18,7 @@ export class CommandRegistry {
 
   async loadFromModulesDir(rootDir: string): Promise<void> {
     await this.walk(rootDir, async (file) => {
-      const mod = await import(file);
+      const mod = await import(pathToFileURL(file).href);
       if (mod?.command) this.registerCommand(mod.command);
       if (mod?.commands && Array.isArray(mod.commands)) {
         for (const c of mod.commands) this.registerCommand(c);
@@ -59,13 +60,14 @@ export class CommandRegistry {
       return;
     }
     for (const entry of entries) {
-      if (entry.startsWith("_") || entry.startsWith(".")) continue;
+      if (entry.startsWith(".")) continue;
       const full = path.join(dir, entry);
       const s = await stat(full);
       if (s.isDirectory()) {
         await this.walk(full, onFile);
       } else if (
         s.isFile() &&
+        !entry.startsWith("_") &&
         (entry.endsWith(".commands.js") ||
           entry.endsWith(".commands.ts") ||
           entry.endsWith(".events.js") ||

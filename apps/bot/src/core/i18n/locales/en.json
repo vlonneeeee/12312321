@@ -1,0 +1,70 @@
+{
+  "common": {
+    "something_went_wrong": "Something went wrong.",
+    "dj_only": "DJ only.",
+    "guild_only": "This command can only be used in a server.",
+    "no_permission": "You don't have permission.",
+    "cooldown": "Wait {seconds}s before using this again.",
+    "yes": "yes",
+    "no": "no"
+  },
+  "language": {
+    "name": "English",
+    "changed": "Server language set to **English**.",
+    "current": "Current language: **{lang}**. Available: ru, en.",
+    "unsupported": "Unsupported language. Available: ru, en."
+  },
+  "music": {
+    "join_voice_first": "Join a voice channel first.",
+    "nothing_found": "Nothing found for that query.",
+    "no_player": "Nothing is playing.",
+    "only_dj_skip": "Only DJs and the song requester can skip.",
+    "volume_range": "Volume must be 0–200.",
+    "playlist_added": "Added playlist ({count} tracks)",
+    "added_to_queue": "Added to queue",
+    "skipped": "Skipped",
+    "track_skipped": "Track skipped.",
+    "paused": "Paused",
+    "resumed": "Resumed",
+    "stopped": "Stopped"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "already_open": "You already have an open ticket: <#{channelId}>",
+    "channel_missing": "Ticket channel missing.",
+    "already_closed": "Ticket already closed.",
+    "not_found": "Ticket not found.",
+    "already_claimed": "Ticket already claimed by <@{claimerId}>.",
+    "use_in_text_channel": "Use in a text channel.",
+    "provide_category": "Provide at least 1 category.",
+    "panel_deployed": "Panel deployed",
+    "ticket_opened_title": "Ticket opened",
+    "ticket_opened_body": "Category: **{category}**\nSubject: {subject}\nStaff will be with you shortly.",
+    "subject_none": "(none)",
+    "claimed_title": "Claimed",
+    "claimed_body": "Claimed by <@{claimerId}>",
+    "close_failed": "Failed to close."
+  },
+  "economy": {
+    "insufficient_funds": "Insufficient funds.",
+    "balance_self": "Your balance: **{amount}** {currency}",
+    "balance_other": "<@{userId}>'s balance: **{amount}** {currency}",
+    "daily_claimed": "Daily claimed: **+{amount}**",
+    "daily_cooldown": "Next daily in {time}.",
+    "transfer_done": "Transferred **{amount}** {currency} to <@{toId}>.",
+    "transfer_self": "You can't transfer to yourself."
+  },
+  "moderation": {
+    "user_required": "Specify a user.",
+    "reason_required": "Specify a reason.",
+    "cant_mod_self": "You can't moderate yourself.",
+    "cant_mod_bot": "You can't moderate the bot.",
+    "higher_role": "Target has a higher role than you.",
+    "warned": "Warned <@{userId}>: {reason}",
+    "muted": "Muted <@{userId}> for {duration}: {reason}",
+    "unmuted": "Unmuted <@{userId}>",
+    "kicked": "Kicked <@{userId}>: {reason}",
+    "banned": "Banned <@{userId}>: {reason}",
+    "unbanned": "Unbanned <@{userId}>"
+  }
+}

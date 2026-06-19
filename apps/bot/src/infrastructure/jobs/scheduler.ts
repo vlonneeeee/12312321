@@ -17,7 +17,7 @@ const log = child("jobs");
 
 const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
-const QUEUE_NAME = "bot:jobs";
+const QUEUE_NAME = "bot-jobs";
 
 type JobName =
   | "temp-roles"

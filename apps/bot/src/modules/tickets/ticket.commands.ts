@@ -9,14 +9,20 @@ import type { SlashCommand } from "@core/handler/command";
 import { prisma } from "@core/db/prisma";
 import { errorEmbed, infoEmbed, successEmbed } from "@shared/embeds/factory";
 import { UserFacingError } from "@core/errors/errors";
+import { t } from "@core/i18n";
 
 async function reply(interaction: import("discord.js").ChatInputCommandInteraction, fn: () => Promise<void>) {
   try {
     await fn();
   } catch (err) {
-    const msg = err instanceof UserFacingError ? err.message : "Something went wrong.";
-    if (interaction.replied || interaction.deferred) await interaction.editReply({ embeds: [errorEmbed("Tickets", msg)] });
-    else await interaction.reply({ embeds: [errorEmbed("Tickets", msg)], ephemeral: true });
+    const fallback = await t(interaction.guildId, "common.something_went_wrong");
+    const msg = err instanceof UserFacingError ? err.message : fallback;
+    const title = await t(interaction.guildId, "tickets.title");
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply({ embeds: [errorEmbed(title, msg)] });
+    } else {
+      await interaction.reply({ embeds: [errorEmbed(title, msg)], ephemeral: true });
+    }
   }
 }
 
@@ -44,14 +50,14 @@ const panel: SlashCommand = {
       const categoriesRaw = interaction.options.getString("categories", true);
       const channel = interaction.channel;
       if (!channel || channel.type !== ChannelType.GuildText) {
-        throw new UserFacingError("Use in a text channel.");
+        throw new UserFacingError(await t(interaction.guildId, "tickets.use_in_text_channel"));
       }
       const cats = categoriesRaw
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
         .map((label) => ({ key: label.toLowerCase().replace(/\s+/g, "_"), label }));
-      if (cats.length === 0) throw new UserFacingError("Provide at least 1 category.");
+      if (cats.length === 0) throw new UserFacingError(await t(interaction.guildId, "tickets.provide_category"));
 
       const select = new StringSelectMenuBuilder()
         .setCustomId("ticket:open")
@@ -75,7 +81,10 @@ const panel: SlashCommand = {
         },
       });
 
-      await interaction.reply({ embeds: [successEmbed("Panel deployed")], ephemeral: true });
+      await interaction.reply({
+        embeds: [successEmbed(await t(interaction.guildId, "tickets.panel_deployed"))],
+        ephemeral: true,
+      });
     });
   },
 };
@@ -98,7 +107,12 @@ const openCmd: SlashCommand = {
         subject,
       });
       await interaction.reply({
-        embeds: [successEmbed("Ticket opened", `<#${r.channelId}>`)],
+        embeds: [
+          successEmbed(
+            await t(interaction.guildId, "tickets.ticket_opened_title"),
+            `<#${r.channelId}>`,
+          ),
+        ],
         ephemeral: true,
       });
     });
@@ -120,8 +134,10 @@ const ticketClose: ButtonHandler = {
     try {
       await ticketService.close(ticketId, interaction.member as import("discord.js").GuildMember);
     } catch (err) {
-      const msg = err instanceof UserFacingError ? err.message : "Failed to close.";
-      await interaction.reply({ embeds: [errorEmbed("Close", msg)], ephemeral: true }).catch(() => null);
+      const fallback = await t(interaction.guildId, "tickets.close_failed");
+      const msg = err instanceof UserFacingError ? err.message : fallback;
+      const title = await t(interaction.guildId, "tickets.title");
+      await interaction.reply({ embeds: [errorEmbed(title, msg)], ephemeral: true }).catch(() => null);
     }
   },
 };
@@ -136,8 +152,10 @@ const ticketClaim: ButtonHandler = {
       await ticketService.claim(ticketId, interaction.member as import("discord.js").GuildMember);
       await interaction.deferUpdate();
     } catch (err) {
-      const msg = err instanceof UserFacingError ? err.message : "Failed to claim.";
-      await interaction.reply({ embeds: [errorEmbed("Claim", msg)], ephemeral: true }).catch(() => null);
+      const fallback = await t(interaction.guildId, "common.something_went_wrong");
+      const msg = err instanceof UserFacingError ? err.message : fallback;
+      const title = await t(interaction.guildId, "tickets.title");
+      await interaction.reply({ embeds: [errorEmbed(title, msg)], ephemeral: true }).catch(() => null);
     }
   },
 };
@@ -162,12 +180,19 @@ const ticketOpenSelect: SelectMenuHandler = {
         category: cat,
       });
       await interaction.reply({
-        embeds: [successEmbed("Ticket opened", `<#${r.channelId}>`)],
+        embeds: [
+          successEmbed(
+            await t(interaction.guildId, "tickets.ticket_opened_title"),
+            `<#${r.channelId}>`,
+          ),
+        ],
         ephemeral: true,
       });
     } catch (err) {
-      const msg = err instanceof UserFacingError ? err.message : "Failed to open ticket.";
-      await interaction.reply({ embeds: [errorEmbed("Tickets", msg)], ephemeral: true });
+      const fallback = await t(interaction.guildId, "common.something_went_wrong");
+      const msg = err instanceof UserFacingError ? err.message : fallback;
+      const title = await t(interaction.guildId, "tickets.title");
+      await interaction.reply({ embeds: [errorEmbed(title, msg)], ephemeral: true });
     }
   },
 };
